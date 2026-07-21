@@ -20,5 +20,25 @@ export type {
   Architecture,
 } from "./core/types.js";
 
-// The find pipeline, the Finder seam, the bundled catalog, and the metadata
-// catalogs are exported here as issues #2–#5 land them.
+// Static hardware catalogs (also available via the "./metadata" subpath export).
+export {
+  ProcessorDatabase,
+  GPUDatabase,
+  GPUAliases,
+  VendorAliases,
+  EFACapableFamilies,
+  NetworkBandwidthTiers,
+  SizeCategories,
+  AppCatalog,
+  lookupApp,
+} from "./metadata/index.js";
+export type {
+  ProcessorInfo,
+  GPUInfo,
+  NetworkCapability,
+  SizeCategory,
+  AppEntry,
+} from "./metadata/index.js";
+
+// The find pipeline, the Finder seam, and the bundled catalog are exported here
+// as issues #3–#5 land them.

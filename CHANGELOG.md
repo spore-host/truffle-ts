@@ -9,6 +9,15 @@ Pre-1.0, breaking changes bump the MINOR version.
 ## [Unreleased]
 
 ### Added
+- **Resolve + criteria + filter + explain + sort** (`src/core/`) — the rest of
+  the find pipeline, ported from Go `pkg/find` (`resolve.go`/`executor.go`/
+  `result.go`) and `matchesFilters` (`client.go`): `resolveInstanceFamilies`/
+  `resolveGpuInstances`/`deriveArchitecture`/`buildSizePattern`, `resolveCard`/
+  `cardInstanceTypes` + `ErrNoMatch` (strict, never match-all); `buildCriteria`
+  → `{ pattern, filters }`; `matchesFilters` as an in-memory pass; `explainMatch`
+  (human match reasons); `sortResults` (cheapest/expensive/performant/newest,
+  unknown prices last). Families are emitted in sorted order for deterministic
+  patterns. Go test tables ported by behavior (issue #4).
 - **Query parser** (`src/core/parser.ts`) — a faithful port of the Go
   `pkg/find/parser.go`: `parseQuery` tokenizes a free-text query and classifies
   each token (vendor/processor/GPU/size/vCPU/memory/GPU-count/arch/network/EFA/

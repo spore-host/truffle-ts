@@ -8,6 +8,13 @@ Pre-1.0, breaking changes bump the MINOR version.
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-07-20
+
+### Added
+- **`prepare` script** — builds the library (`build:lib`) on install, so the
+  package can be consumed as a git dependency (e.g. `spore-host/truffle-ts#v0.1.1`)
+  without the prebuilt `dist/` being committed. No API change.
+
 ## [0.1.0] — 2026-07-20
 
 Initial release — the offline find foundation.
@@ -63,5 +70,6 @@ Initial release — the offline find foundation.
   Vite demo build (→ `site/`), `package.json` `exports` map (`.` + `./metadata`),
   TypeDoc, and CI (typecheck + test + build) (issue #1).
 
-[Unreleased]: https://github.com/spore-host/truffle-ts/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/spore-host/truffle-ts/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/spore-host/truffle-ts/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/spore-host/truffle-ts/releases/tag/v0.1.0

@@ -40,5 +40,7 @@ export type {
   AppEntry,
 } from "./metadata/index.js";
 
-// The find pipeline, the Finder seam, and the bundled catalog are exported here
-// as issues #3–#5 land them.
+// The find pipeline — parser (issue #3); resolve/criteria/filter (#4); the
+// Finder seam + bundled catalog + find() (#5) follow.
+export { parseQuery, sortPreference, qualitativeTokens } from "./core/parser.js";
+export type { ParsedQuery, Token, TokenType, SortPreference } from "./core/parser.js";

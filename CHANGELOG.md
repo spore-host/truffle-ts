@@ -9,6 +9,14 @@ Pre-1.0, breaking changes bump the MINOR version.
 ## [Unreleased]
 
 ### Added
+- **Query parser** (`src/core/parser.ts`) — a faithful port of the Go
+  `pkg/find/parser.go`: `parseQuery` tokenizes a free-text query and classifies
+  each token (vendor/processor/GPU/size/vCPU/memory/GPU-count/arch/network/EFA/
+  nested-virt/app/qualitative) with longest-phrase-first matching against the
+  catalogs, resolving multi-word names and marketing spellings. Includes
+  `sortPreference` (cheapest/fastest/newest from qualitative keywords) and
+  conflicting-architecture validation. The Go `parser_test.go` table is ported
+  1:1 (issue #3).
 - **Metadata catalogs** (`src/metadata/`) — a direct port of the Go tool's
   `pkg/metadata`: processors (code names → vendor/arch/generation/families +
   vendor aliases), GPUs (H100/A100/L40S/Trainium… → memory/use-case/families/

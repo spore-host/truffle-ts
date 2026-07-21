@@ -40,7 +40,21 @@ export type {
   AppEntry,
 } from "./metadata/index.js";
 
-// The find pipeline — parser (issue #3); resolve/criteria/filter (#4); the
-// Finder seam + bundled catalog + find() (#5) follow.
+// The find pipeline — parser (#3) → resolve/criteria/filter/explain/sort (#4).
+// The Finder seam + bundled catalog + the find() convenience follow in #5.
 export { parseQuery, sortPreference, qualitativeTokens } from "./core/parser.js";
 export type { ParsedQuery, Token, TokenType, SortPreference } from "./core/parser.js";
+export {
+  resolveInstanceFamilies,
+  resolveGpuInstances,
+  deriveArchitecture,
+  buildSizePattern,
+  resolveCard,
+  cardInstanceTypes,
+  ErrNoMatch,
+} from "./core/resolve.js";
+export { buildCriteria, buildInstanceTypePattern } from "./core/criteria.js";
+export type { SearchCriteria } from "./core/criteria.js";
+export { matchesFilters, extractFamily } from "./core/filter.js";
+export { explainMatch } from "./core/explain.js";
+export { sortResults, instanceGeneration } from "./core/sort.js";

@@ -9,6 +9,11 @@ Pre-1.0, breaking changes bump the MINOR version.
 ## [Unreleased]
 
 ### Added
+- **Standalone demo** (`src/ui/search.ts`) — a search box over the library: type
+  a natural-language query, pick a sort, and see matching instance types with
+  the reasons they matched, an estimated $/hr, and a "bundled catalog · as of
+  2026-01" staleness badge. Example-query chips. DOM lives only here; the library
+  stays pure. happy-dom tests drive the widget end-to-end (issue #6).
 - **Finder seam + bundled catalog + `find()`** — the keystone that makes the
   library usable offline. `find(query)` runs the whole pipeline (parse →
   criteria → search → sort → explain) and returns ranked, explained results with

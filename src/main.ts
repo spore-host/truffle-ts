@@ -1,14 +1,12 @@
-// Demo entry. A thin consumer of the truffle-ts library — the standalone search
-// UI is built out in issue #6. For now it renders a placeholder so the Vite demo
-// build has an entry point and the Pages deploy has something to serve.
+// Demo entry. Mounts the standalone search UI — a consumer of the truffle-ts
+// library (src/index.ts). The library itself has no DOM dependency; this page is
+// just one way to drive it.
 
-import { VERSION } from "./index.js";
+import { SearchApp } from "./ui/search.js";
 
 const app = document.getElementById("app");
 if (app) {
-  app.innerHTML = `
-    <main class="scaffold">
-      <h1>truffle <span class="v">v${VERSION}</span></h1>
-      <p>Browser-native EC2 instance discovery. The search UI is coming soon.</p>
-    </main>`;
+  const search = new SearchApp();
+  app.appendChild(search.el);
+  search.focus();
 }

@@ -10,6 +10,9 @@
 - **[API reference](api.md)** — the public API. The generated
   [TypeDoc reference](https://spore-host.github.io/truffle-ts/api/) is published
   alongside the demo.
+- **[Integration with spawn-ts](https://github.com/spore-host/spawn-ts/blob/main/docs/integration.md)**
+  — how truffle-ts (instance discovery) and spawn-ts (launcher/lifecycle) compose:
+  the find → launch → spored flow and the tag-emit-vs-execution boundary.
 
 For install + a quick start, see the [top-level README](../README.md). For the
 live demo, see https://spore-host.github.io/truffle-ts/.

@@ -83,6 +83,7 @@ instance-picker integration are tracked on the roadmap.
 - [Query language](docs/query-language.md) — what a `find` query understands.
 - [Bundled catalog](docs/catalog.md) — the offline snapshot + pricing.
 - [API reference](docs/api.md) — the public API (+ generated [TypeDoc](https://spore-host.github.io/truffle-ts/api/)).
+- [Integration with spawn-ts](https://github.com/spore-host/spawn-ts/blob/main/docs/integration.md) — how the two tools compose.
 
 ## Development
 

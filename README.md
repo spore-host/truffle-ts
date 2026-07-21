@@ -37,6 +37,26 @@ parseQuery(text) → ParsedQuery          # tokenize + classify
       → sort + explainMatch             # rank + annotate
 ```
 
+### As a dependency (e.g. an instance picker)
+
+truffle-ts is meant to be embedded. A host app imports `find` and decides its own
+UI — for example, turning a free-text instance-type field into a recommender:
+
+```ts
+import { find } from "@spore-host/truffle-ts";
+
+// User types "nvidia h100 efa" into a picker; you show the matches and let them
+// choose. The chosen record carries specs + an estimated $/hr you can reuse.
+const [top] = await find(userQuery);
+if (top) {
+  launchForm.instanceType.value = top.instance.instanceType;   // e.g. "p5.48xlarge"
+  launchForm.pricePerHour.value = String(top.instance.onDemandPrice ?? "");
+}
+```
+
+Because `core/` and `metadata/` are pure (no DOM, no AWS SDK), you can import
+them anywhere in your app. truffle-ts never reaches back into the host.
+
 ## How it works
 
 | Layer | What it is |
@@ -56,6 +76,13 @@ can't provide directly).
 **v0.1.0 — offline find foundation.** Natural-language search over a bundled
 catalog, fully offline. Live-AWS data, spot pricing, and the `spawn-ts`
 instance-picker integration are tracked on the roadmap.
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — the pipeline, the `Finder` seam, layering.
+- [Query language](docs/query-language.md) — what a `find` query understands.
+- [Bundled catalog](docs/catalog.md) — the offline snapshot + pricing.
+- [API reference](docs/api.md) — the public API (+ generated [TypeDoc](https://spore-host.github.io/truffle-ts/api/)).
 
 ## Development
 

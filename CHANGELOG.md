@@ -8,6 +8,10 @@ Pre-1.0, breaking changes bump the MINOR version.
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-07-20
+
+Initial release — the offline find foundation.
+
 ### Added
 - **Documentation** (`docs/`) — architecture (the pipeline + `Finder` seam +
   layering), query-language (every token type + qualitative sort + conflicts +
@@ -59,4 +63,5 @@ Pre-1.0, breaking changes bump the MINOR version.
   Vite demo build (→ `site/`), `package.json` `exports` map (`.` + `./metadata`),
   TypeDoc, and CI (typecheck + test + build) (issue #1).
 
-[Unreleased]: https://github.com/spore-host/truffle-ts/commits/main
+[Unreleased]: https://github.com/spore-host/truffle-ts/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/spore-host/truffle-ts/releases/tag/v0.1.0

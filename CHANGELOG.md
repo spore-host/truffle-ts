@@ -9,6 +9,16 @@ Pre-1.0, breaking changes bump the MINOR version.
 ## [Unreleased]
 
 ### Added
+- **Finder seam + bundled catalog + `find()`** — the keystone that makes the
+  library usable offline. `find(query)` runs the whole pipeline (parse →
+  criteria → search → sort → explain) and returns ranked, explained results with
+  zero setup. The `Finder` seam (`src/core/finder.ts`) mirrors the Go
+  `pkg/aws.Finder` + spawn-ts's Provider pattern: v0.1.0 ships one async `search`
+  method + the default `BundledFinder` over a committed 154-type catalog snapshot
+  (`src/data/instances.json`, "as of 2026-01"), with a `LiveFinder` sub-interface
+  reserved for a future live-AWS backend. Static pricing (`src/data/pricing.ts`)
+  ports `libs/pricing` (exact table + family estimate). A drift-invariant test
+  asserts every `GPUDatabase` instance type exists in the catalog (issue #5).
 - **Resolve + criteria + filter + explain + sort** (`src/core/`) — the rest of
   the find pipeline, ported from Go `pkg/find` (`resolve.go`/`executor.go`/
   `result.go`) and `matchesFilters` (`client.go`): `resolveInstanceFamilies`/

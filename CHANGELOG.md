@@ -8,6 +8,25 @@ Pre-1.0, breaking changes bump the MINOR version.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-07-21
+
+### Added
+- **Live catalog generator** (`scripts/gen-catalog.mjs`) — regenerates
+  `src/data/instances.json` from **real AWS data**: EC2 `DescribeInstanceTypes`
+  for specs (vCPU/cores/threads-per-core/memory/arch/GPU/nested-virt) and the
+  Pricing API for on-demand `$/hr`, over the curated family set. Read-only AWS,
+  run out-of-band with credentials. `InstanceType` gains an optional
+  `estimatedPrice` flag.
+
+### Changed
+- **The bundled catalog is now real AWS data** ("as of 2026-07"): 231 types,
+  219 live-priced. Prices reflect current us-east-1 on-demand rates (e.g.
+  `p5.48xlarge` $55.04, not the old $98.32 estimate); specs are exact (e.g.
+  `t4g.micro` is 2 vCPU / 1 GiB). 12 legacy/brand-new GPU types not offered in
+  us-east-1 (g3/p2/p3, p5e, p6e-gb200) are carried from the seed and marked
+  `estimatedPrice`, so GPU-name resolution and the drift-invariant still hold.
+  `CATALOG_AS_OF` → `2026-07`.
+
 ## [0.2.0] — 2026-07-20
 
 ### Added
@@ -84,7 +103,8 @@ Initial release — the offline find foundation.
   Vite demo build (→ `site/`), `package.json` `exports` map (`.` + `./metadata`),
   TypeDoc, and CI (typecheck + test + build) (issue #1).
 
-[Unreleased]: https://github.com/spore-host/truffle-ts/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/spore-host/truffle-ts/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/spore-host/truffle-ts/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spore-host/truffle-ts/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/spore-host/truffle-ts/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/spore-host/truffle-ts/releases/tag/v0.1.0

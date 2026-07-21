@@ -34,8 +34,14 @@ export interface InstanceType {
   gpuModel?: string;
   /** GPU vendor, e.g. "nvidia". */
   gpuManufacturer?: string;
-  /** On-demand $/hr — a static estimate, 0/omitted if unknown. */
+  /** On-demand $/hr. Live from the Pricing API when regenerated, else a static estimate. */
   onDemandPrice?: number;
+  /**
+   * True when this entry's specs/price are NOT live AWS data — carried over from
+   * the hand seed because the type isn't offered in the generated region (legacy
+   * families like g3/p2/p3, or brand-new ones). Absent = came from the live pull.
+   */
+  estimatedPrice?: boolean;
   /** True if the type supports nested virtualization (KVM/Hyper-V in-instance). */
   nestedVirt?: boolean;
 }

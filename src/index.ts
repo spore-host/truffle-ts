@@ -10,7 +10,7 @@
 // src/ui is just one consumer — nothing in core/ or metadata/ depends on the DOM.
 
 /** Library version, matching package.json. */
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 // Core domain types (the shape of a catalog entry / result / filter).
 export type {
@@ -41,8 +41,16 @@ export type {
 } from "./metadata/index.js";
 
 // The one-call convenience: query string → ranked, explained results (offline).
-export { find, findInstances } from "./core/find.js";
+export { find, findInstances, findByPattern } from "./core/find.js";
 export type { FindOptions } from "./core/find.js";
+
+// Glob/regex pattern detection + conversion (find auto-routes to these).
+export {
+  looksLikePattern,
+  looksLikeRegex,
+  patternToRegex,
+  wildcardToRegex,
+} from "./core/pattern.js";
 
 // The Finder seam + the default bundled-catalog implementation + its data.
 export type { Finder, LiveFinder, SpotPriceResult, SpotOptions } from "./core/finder.js";

@@ -58,3 +58,32 @@ describe("find (offline, bundled catalog)", () => {
     expect(results.some((r) => r.instance.instanceType === "p5.48xlarge")).toBe(true);
   });
 });
+
+describe("find — glob/regex pattern routing", () => {
+  it("a glob (m7g*) matches instance-type names directly, not the NL parser", async () => {
+    const results = await find("m7g*");
+    const types = results.map((r) => r.instance.instanceType);
+    expect(types.length).toBeGreaterThan(0);
+    expect(types.every((t) => t.startsWith("m7g."))).toBe(true);
+    expect(results[0].reasons[0]).toContain("matched pattern");
+  });
+
+  it("a regex character class (c[67]g.large) matches the right families", async () => {
+    const types = (await find("c[67]g.large")).map((r) => r.instance.instanceType);
+    // Only c6g/c7g .large (the dot is a literal separator, not any-char).
+    expect(types).toContain("c7g.large");
+    expect(types.every((t) => /^c[67]g\.large$/.test(t))).toBe(true);
+  });
+
+  it("an explicit family glob (p5*) matches by name", async () => {
+    const types = (await find("p5*")).map((r) => r.instance.instanceType);
+    expect(types).toContain("p5.48xlarge");
+    expect(types.every((t) => t.startsWith("p5"))).toBe(true);
+  });
+
+  it("respects an explicit sort on the pattern path", async () => {
+    const results = await find("c7g*", { sort: "cheapest" });
+    const priced = results.map((r) => r.instance.onDemandPrice ?? 0).filter((p) => p > 0);
+    expect(results[0].instance.onDemandPrice).toBe(Math.min(...priced));
+  });
+});

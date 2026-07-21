@@ -60,6 +60,26 @@ A query that mixes architectures — e.g. `intel graviton` (x86_64 + arm64) —
 throws a "conflicting architectures" error rather than returning a nonsensical
 mix.
 
+## Glob / regex patterns
+
+If a query contains a glob wildcard (`*`, `?`) or a regex metacharacter
+(`[`, `]`, `(`, `)`, `+`, `|`, `\d`, `\w`, `\s`), `find` treats it as an
+**instance-type name pattern** and matches it directly against type names —
+skipping the natural-language parser entirely:
+
+| Query | Matches |
+|-------|---------|
+| `m7i*` | every `m7i.*` size |
+| `c[6-8]i.large` | `c6i.large`, `c7i.large`, `c8i.large` (the dot is literal) |
+| `(m7i\|c7i).large` | `m7i.large`, `c7i.large` |
+| `*.metal` | every `.metal` type |
+
+A **bare word** like `a100`, `c6i`, or `m7i.large` (no wildcard/regex char) is
+*not* treated as a pattern — it goes through the natural-language parser, so
+`a100` resolves to the A100 instance types and `c6i` to the c6i family. To match
+by name instead, add a glob: `a100*`, `c6i*`. (This is a deliberate divergence
+from the Go tool, whose bare-word pattern routing collides with GPU model names.)
+
 ## Card resolution (strict)
 
 Separately from free-text search, `resolveCard(name)` / `cardInstanceTypes(name)`

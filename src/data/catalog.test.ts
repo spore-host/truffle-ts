@@ -11,7 +11,9 @@ describe("bundled catalog integrity", () => {
   it("is non-trivial and well-formed", () => {
     expect(catalog.length).toBeGreaterThanOrEqual(50);
     for (const it of catalog) {
-      expect(it.instanceType).toMatch(/^[a-z0-9-]+\.[a-z0-9]+$/);
+      // family.size — size may carry a hyphen for metal variants (e.g.
+      // "c7a.metal-48xl", "mac2.metal") seen in real AWS data.
+      expect(it.instanceType).toMatch(/^[a-z0-9-]+\.[a-z0-9-]+$/);
       expect(it.instanceFamily).toBe(extractFamily(it.instanceType));
       expect(it.vcpus).toBeGreaterThan(0);
       expect(it.memoryMib).toBeGreaterThan(0);
@@ -40,6 +42,25 @@ describe("bundled catalog integrity", () => {
     expect(p5.gpus).toBe(8);
     expect(p5.gpuModel).toBe("H100");
     expect(p5.onDemandPrice).toBeGreaterThan(0);
+  });
+
+  it("carries real specs from the live pull (physical cores populated)", () => {
+    // Live DescribeInstanceTypes fills physicalCores; the old hand seed derived
+    // it. A Graviton (1 thread/core) and an x86 (2/core) sanity-check the source.
+    const c7g = catalog.find((it) => it.instanceType === "c7g.2xlarge")!;
+    expect(c7g.physicalCores).toBe(8);
+    expect(c7g.threadsPerCore).toBe(1);
+    const t4gMicro = catalog.find((it) => it.instanceType === "t4g.micro")!;
+    expect(t4gMicro.memoryMib).toBe(1024); // real: 1 GiB (the seed guessed 0.5)
+  });
+
+  it("flags carried-over (non-live) types with estimatedPrice", () => {
+    // Legacy/brand-new GPU families not offered in the generated region are
+    // carried from the seed and marked, so they're clearly not live data.
+    const p3 = catalog.find((it) => it.instanceType === "p3.2xlarge");
+    if (p3) expect(p3.estimatedPrice).toBe(true);
+    // Live types never carry the flag.
+    expect(catalog.find((it) => it.instanceType === "c7g.2xlarge")!.estimatedPrice).toBeUndefined();
   });
 });
 

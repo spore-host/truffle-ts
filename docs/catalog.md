@@ -28,9 +28,12 @@ inf/trn) plus representative graviton, Intel, and AMD CPU families across sizes.
 }
 ```
 
-> ⚠️ **It is an approximate snapshot, "as of 2026-01" — not live AWS data.**
-> Specs and prices drift; treat prices as estimates. The demo shows a
-> "bundled catalog · as of 2026-01" badge to make this explicit.
+> ⚠️ **It is a point-in-time snapshot ("as of 2026-07") — not a live query.**
+> Since 0.3.0 the snapshot is generated from real AWS data (see below), but
+> specs and prices still drift after the pull; treat prices as indicative. The
+> demo shows a "bundled catalog · as of 2026-07" badge to make this explicit. A
+> few legacy/brand-new GPU types not offered in the generated region are carried
+> from the earlier hand seed and flagged `estimatedPrice: true`.
 
 ## Pricing
 
@@ -45,25 +48,30 @@ Live pricing (the AWS Price List **Query** API) needs IAM credentials + SigV4 an
 isn't browser-feasible; it belongs behind a live `Finder`. The unauthenticated
 bulk offer files are too large / CORS-uncertain for a direct browser fetch.
 
-## Why there's a seed generator (not a `truffle dump`)
+## Regenerating from live AWS (`gen-catalog`)
 
-The Go tool has **no** catalog-dump command — it reads specs live from
-`DescribeInstanceTypes`. Until a live generator lands (roadmap), the snapshot is
-produced by `scripts/seed-catalog.mjs`, a one-shot Node script with hand-curated
-family/size specs. Regenerate it with:
+`scripts/gen-catalog.mjs` regenerates `instances.json` from **real AWS data** —
+EC2 `DescribeInstanceTypes` for specs and the Pricing API for on-demand `$/hr` —
+for the curated family set (the families already in the catalog). It's read-only
+(describe + pricing, never a launch) and run out-of-band, since it needs
+credentials a browser can't have:
 
 ```bash
-node scripts/seed-catalog.mjs   # rewrites src/data/instances.json
+AWS_PROFILE=<profile> node scripts/gen-catalog.mjs --region us-east-1
+# then bump CATALOG_AS_OF in src/data/catalog.ts and commit the JSON
 ```
 
-The GPU section is derived from the same instance-type lists as the metadata
-`GPUDatabase`, and a **drift-invariant test** (`src/data/catalog.test.ts`)
-asserts every `GPUDatabase` instance type exists in the catalog — so a GPU query
-can never resolve to a type that's missing from the snapshot.
+Types in the curated families that a region doesn't offer (legacy g3/p2/p3, or
+brand-new p5e/p6e-gb200) are **carried over** from the previous catalog and
+flagged `estimatedPrice: true`, so GPU-name resolution still works offline and a
+**drift-invariant test** (`src/data/catalog.test.ts`) — every `GPUDatabase`
+instance type must exist in the catalog — keeps passing.
 
-## Roadmap: a live catalog
+The older `scripts/seed-catalog.mjs` (hand-curated specs) remains as the
+bootstrap fallback for when AWS isn't reachable.
 
-`scripts/gen-catalog.ts` (deferred) will regenerate `instances.json` from real
-`DescribeInstanceTypes` output (with credentials, run out-of-band), replacing the
-hand seed. At that point a live `Finder` can also serve specs/pricing directly
-for consumers that have a backend.
+## Roadmap: a live Finder
+
+A live `Finder` (implementing the `LiveFinder` interface) could serve specs/
+pricing directly for consumers that have a backend/substrate proxy — as opposed
+to the offline bundled snapshot. Not yet built.

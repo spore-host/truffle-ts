@@ -11,5 +11,6 @@ export function loadBundledCatalog(): InstanceType[] {
   return (instances as InstanceType[]).map((it) => ({ ...it }));
 }
 
-/** Approximate date the bundled snapshot reflects, for UI staleness labels. */
-export const CATALOG_AS_OF = "2026-01";
+/** Date the bundled snapshot reflects, for UI staleness labels. Set when the
+ * catalog is regenerated from live AWS (scripts/gen-catalog.mjs). */
+export const CATALOG_AS_OF = "2026-07";

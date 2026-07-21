@@ -24,6 +24,7 @@ export default defineConfig({
         "src/index.ts",
         "src/main.ts",
         "src/metadata/index.ts",
+        "src/live/index.ts", // pure barrel
       ],
       reporter: ["text", "html", "lcov"],
     },

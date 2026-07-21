@@ -33,6 +33,10 @@
     "./metadata": {
       "types": "./dist/metadata/index.d.ts",
       "import": "./dist/metadata/index.js"
+    },
+    "./live": {
+      "types": "./dist/live/index.d.ts",
+      "import": "./dist/live/index.js"
     }
   },
   "files": [
@@ -53,7 +57,13 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage"
   },
+  "optionalDependencies": {
+    "@aws-sdk/client-ec2": "^3.700.0",
+    "@aws-sdk/client-pricing": "^3.700.0"
+  },
   "devDependencies": {
+    "@aws-sdk/client-ec2": "^3.700.0",
+    "@aws-sdk/client-pricing": "^3.700.0",
     "@types/node": "^26.1.1",
     "@vitest/coverage-v8": "^2.1.9",
     "happy-dom": "^20.11.0",

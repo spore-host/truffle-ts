@@ -40,8 +40,17 @@ export type {
   AppEntry,
 } from "./metadata/index.js";
 
-// The find pipeline — parser (#3) → resolve/criteria/filter/explain/sort (#4).
-// The Finder seam + bundled catalog + the find() convenience follow in #5.
+// The one-call convenience: query string → ranked, explained results (offline).
+export { find, findInstances } from "./core/find.js";
+export type { FindOptions } from "./core/find.js";
+
+// The Finder seam + the default bundled-catalog implementation + its data.
+export type { Finder, LiveFinder, SpotPriceResult, SpotOptions } from "./core/finder.js";
+export { BundledFinder } from "./data/bundled-finder.js";
+export { loadBundledCatalog, CATALOG_AS_OF } from "./data/catalog.js";
+export { onDemandPrice, estimatePriceByFamily, EC2Pricing } from "./data/pricing.js";
+
+// The find pipeline pieces (for consumers that want control over a step).
 export { parseQuery, sortPreference, qualitativeTokens } from "./core/parser.js";
 export type { ParsedQuery, Token, TokenType, SortPreference } from "./core/parser.js";
 export {

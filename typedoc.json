@@ -1,0 +1,14 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "out": "site/api",
+  "name": "truffle-ts API reference",
+  "readme": "none",
+  "includeVersion": true,
+  "excludeInternal": true,
+  "hideGenerator": true,
+  "navigationLinks": {
+    "Demo": "https://spore-host.github.io/truffle-ts/",
+    "GitHub": "https://github.com/spore-host/truffle-ts"
+  }
+}

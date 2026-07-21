@@ -1,0 +1,23 @@
+:root {
+  --bg: #0d1117;
+  --fg: #c9d1d9;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --border: #30363d;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+.scaffold { padding: 48px; }
+.scaffold h1 { color: #fff; font-weight: 700; }
+.scaffold .v { color: var(--muted); font-size: 14px; font-weight: 400; }
+.scaffold p { color: var(--muted); }

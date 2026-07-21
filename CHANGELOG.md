@@ -9,6 +9,12 @@ Pre-1.0, breaking changes bump the MINOR version.
 ## [Unreleased]
 
 ### Added
+- **Documentation** (`docs/`) — architecture (the pipeline + `Finder` seam +
+  layering), query-language (every token type + qualitative sort + conflicts +
+  strict card resolution), catalog (the offline snapshot, pricing, why there's a
+  seed generator), and an API guide, with a docs index. README gains an
+  instance-picker consumer example and doc links; TypeDoc is published to
+  `/api/` (issue #7).
 - **Standalone demo** (`src/ui/search.ts`) — a search box over the library: type
   a natural-language query, pick a sort, and see matching instance types with
   the reasons they matched, an estimated $/hr, and a "bundled catalog · as of

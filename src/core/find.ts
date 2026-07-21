@@ -8,6 +8,7 @@ import { parseQuery, sortPreference, type ParsedQuery, type SortPreference } fro
 import { buildCriteria } from "./criteria.js";
 import { explainMatch } from "./explain.js";
 import { sortResults } from "./sort.js";
+import { looksLikePattern, patternToRegex } from "./pattern.js";
 import type { Finder } from "./finder.js";
 import type { FindResult } from "./types.js";
 import { BundledFinder } from "../data/bundled-finder.js";
@@ -28,8 +29,31 @@ export interface FindOptions {
  * query is empty or has conflicting constraints (from parseQuery).
  */
 export async function find(query: string, opts: FindOptions = {}): Promise<FindResult[]> {
+  const finder = opts.finder ?? defaultFinder;
+  // Pattern queries ("m7i*", "c[6-8]i.large", "trn1.32xlarge") match instance-
+  // type NAMES directly — skip the natural-language parser, which would emit a
+  // match-everything ".*" for them (the Go #69-class bug the routing prevents).
+  if (looksLikePattern(query.trim())) {
+    return findByPattern(finder, query.trim(), opts.sort);
+  }
   const parsed = parseQuery(query);
-  return findInstances(opts.finder ?? defaultFinder, parsed, { sort: opts.sort });
+  return findInstances(finder, parsed, { sort: opts.sort });
+}
+
+/**
+ * Search by an instance-type glob/regex pattern (no NL parsing, no spec
+ * filters). Results are sorted (default: newest generation) and carry a single
+ * "matched pattern" reason.
+ */
+export async function findByPattern(
+  finder: Finder,
+  pattern: string,
+  sort?: SortPreference,
+): Promise<FindResult[]> {
+  const matcher = new RegExp(patternToRegex(pattern));
+  const hits = await finder.search(matcher, {});
+  const ranked = sortResults(hits, sort ?? "default");
+  return ranked.map((instance) => ({ instance, reasons: [`matched pattern "${pattern}"`] }));
 }
 
 /** Lower-level entry: run an already-parsed query through a specific finder. */

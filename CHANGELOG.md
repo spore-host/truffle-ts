@@ -8,6 +8,20 @@ Pre-1.0, breaking changes bump the MINOR version.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-20
+
+### Added
+- **Glob / regex pattern search** (`src/core/pattern.ts`) — `find` now
+  auto-detects when a query is an instance-type *pattern* (`m7i*`, `c[6-8]i.large`,
+  `(m7i|c7i).large`) and matches it directly against instance-type names,
+  bypassing the natural-language parser. Ports the Go `looksLikePattern` /
+  `patternToRegex` / `wildcardToRegex` helpers, exported alongside a new
+  `findByPattern`.
+  - **Deliberate divergence from Go**: a bare word like `a100` / `c6i` stays on
+    the NL path (→ the A100 instance types / the c6i family) instead of being
+    matched as a literal name, which in Go finds nothing. Use an explicit glob
+    (`a100*`, `m7i*`) to force a name pattern.
+
 ## [0.1.1] — 2026-07-20
 
 ### Added
@@ -70,6 +84,7 @@ Initial release — the offline find foundation.
   Vite demo build (→ `site/`), `package.json` `exports` map (`.` + `./metadata`),
   TypeDoc, and CI (typecheck + test + build) (issue #1).
 
-[Unreleased]: https://github.com/spore-host/truffle-ts/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/spore-host/truffle-ts/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/spore-host/truffle-ts/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/spore-host/truffle-ts/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/spore-host/truffle-ts/releases/tag/v0.1.0

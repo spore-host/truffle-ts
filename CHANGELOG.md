@@ -8,6 +8,18 @@ Pre-1.0, breaking changes bump the MINOR version.
 
 ## [Unreleased]
 
+### Added
+- **Live Finder** (`@spore-host/truffle-ts/live`, #17) — `AwsLiveFinder`
+  implements the `LiveFinder` seam to query real AWS at runtime
+  (`DescribeInstanceTypes` per region → mapped + filtered with the same
+  `matchesFilters` as the offline path), for Node/CLI/server consumers. Optional
+  on-demand pricing via the Pricing API (`pricing: "lazy"`). `find(query, {
+  finder })` takes it with no core change; `BundledFinder` stays the default.
+  The AWS SDK is an **optional dependency** reachable only through the `./live`
+  subpath — the default `.` import stays SDK-free (guarded by an isolation test),
+  so browser bundles are unaffected. `getEnabledRegions` included; spot/quota
+  (`getSpotPricing`) deferred to #18.
+
 ## [0.3.0] — 2026-07-21
 
 ### Added

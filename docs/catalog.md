@@ -70,8 +70,29 @@ instance type must exist in the catalog — keeps passing.
 The older `scripts/seed-catalog.mjs` (hand-curated specs) remains as the
 bootstrap fallback for when AWS isn't reachable.
 
-## Roadmap: a live Finder
+## Live data: the `./live` finder (Node only)
 
-A live `Finder` (implementing the `LiveFinder` interface) could serve specs/
-pricing directly for consumers that have a backend/substrate proxy — as opposed
-to the offline bundled snapshot. Not yet built.
+Since 0.4.0 there's an opt-in **live** finder that queries real AWS at runtime
+instead of the bundled snapshot — for CLI/server/Node consumers (a browser can't
+hold AWS credentials safely or reach these endpoints):
+
+```ts
+import { find } from "@spore-host/truffle-ts";
+import { AwsLiveFinder } from "@spore-host/truffle-ts/live";
+
+const finder = new AwsLiveFinder({ regions: "us-east-1" });      // creds via the default AWS chain
+const results = await find("cheapest graviton 8 cores 32gb", { finder });
+```
+
+- It implements the same `Finder` seam, so `find()` takes it with no other
+  change; `BundledFinder` stays the **default** and offline.
+- `search` runs `DescribeInstanceTypes` per region, maps to `InstanceType` (same
+  shape as the snapshot), and filters in-memory with the same `matchesFilters`.
+- Pricing is `"off"` by default (fast, no `pricing:GetProducts` needed); pass
+  `pricing: "lazy"` to fetch real on-demand $/hr for the result set.
+- The AWS SDK is an **optional dependency** reached only through the `./live`
+  subpath, so the default `.` import never pulls it into a browser bundle.
+
+Spot pricing and quotas are the next step (truffle-ts#18). A **browser** live
+path (via a substrate/backend proxy, since a browser can't hold AWS creds) is a
+later follow-up — the Node finder above is the first, unblocked step.

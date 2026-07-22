@@ -1,0 +1,53 @@
+name: Publish to npm
+
+# Publishes @spore-host/truffle-ts to the npm registry when a version tag is
+# pushed (e.g. v0.4.0). Uses npm provenance (a signed, publicly-verifiable link
+# from the package back to this workflow run) — so it needs id-token: write and
+# an NPM_TOKEN automation token stored as a repo/org secret.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
+jobs:
+  publish:
+    name: build + publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      - run: npm ci
+
+      # Publish the library artifacts only (dist/), matching package.json "files".
+      - name: Build library
+        run: npm run build:lib
+
+      - name: Assert declarations emitted
+        run: test -f dist/index.d.ts && test -f dist/live/index.d.ts && test -f dist/metadata/index.d.ts
+
+      # Guard: the pushed tag must match the package.json version, so a v0.4.0 tag
+      # can't accidentally publish 0.3.0.
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "tag v$TAG != package.json $PKG" >&2; exit 1
+          fi
+          echo "tag and package version agree: $PKG"
+
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

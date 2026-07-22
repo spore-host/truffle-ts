@@ -17,7 +17,7 @@
   "bugs": "https://github.com/spore-host/truffle-ts/issues",
   "repository": {
     "type": "git",
-    "url": "https://github.com/spore-host/truffle-ts.git"
+    "url": "git+https://github.com/spore-host/truffle-ts.git"
   },
   "license": "Apache-2.0",
   "author": "Scott Friedman",

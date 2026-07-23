@@ -1,9 +1,11 @@
 name: Publish to npm
 
 # Publishes @spore-host/truffle-ts to the npm registry when a version tag is
-# pushed (e.g. v0.4.0). Uses npm provenance (a signed, publicly-verifiable link
-# from the package back to this workflow run) — so it needs id-token: write and
-# an NPM_TOKEN automation token stored as a repo/org secret.
+# pushed (e.g. v0.4.0). Uses npm Trusted Publishing: publish is authorized by
+# GitHub OIDC (id-token: write) scoped to this repo + workflow — no NPM_TOKEN,
+# nothing to rotate. Provenance is attached automatically. Requires the trusted
+# publisher to be registered on npmjs.com (org spore-host, repo truffle-ts,
+# workflow publish.yml) and npm CLI >= 11.5.1 (installed below).
 on:
   push:
     tags: ["v*"]
@@ -26,6 +28,10 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
+      # Trusted Publishing (OIDC-authorized publish) needs a recent npm CLI.
+      - name: Upgrade npm for Trusted Publishing
+        run: npm install -g npm@latest
+
       - run: npm ci
 
       # Publish the library artifacts only (dist/), matching package.json "files".
@@ -47,7 +53,7 @@ jobs:
           fi
           echo "tag and package version agree: $PKG"
 
+      # No NODE_AUTH_TOKEN: OIDC (id-token: write) authorizes the publish, and
+      # provenance is attached automatically under Trusted Publishing.
       - name: Publish
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

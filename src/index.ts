@@ -10,7 +10,7 @@
 // src/ui is just one consumer — nothing in core/ or metadata/ depends on the DOM.
 
 /** Library version, matching package.json. */
-export const VERSION = "0.4.1";
+export const VERSION = "0.4.2";
 
 // Core domain types (the shape of a catalog entry / result / filter).
 export type {

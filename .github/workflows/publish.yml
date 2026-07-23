@@ -22,13 +22,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22: npm's Trusted Publishing support needs a recent npm CLI, and
+      # current npm releases require Node >= 22.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
-      # Trusted Publishing (OIDC-authorized publish) needs a recent npm CLI.
+      # Trusted Publishing (OIDC-authorized publish) needs npm >= 11.5.1.
       - name: Upgrade npm for Trusted Publishing
         run: npm install -g npm@latest
 

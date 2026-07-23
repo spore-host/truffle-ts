@@ -1,6 +1,6 @@
 {
   "name": "@spore-host/truffle-ts",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Browser-native EC2 instance discovery — parse a natural-language query, resolve to instance types, filter, offline. A TypeScript port of the spore.host truffle tool.",
   "keywords": [
     "aws",

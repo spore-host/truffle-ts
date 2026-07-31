@@ -66,16 +66,20 @@ them anywhere in your app. truffle-ts never reaches back into the host.
 | `data/` | the bundled instance catalog + a `Finder` over it + static pricing. |
 | `Finder` seam | swap the bundled catalog for a live-AWS/substrate backend later. |
 
-The bundled catalog is an **approximate snapshot ("as of 2026-01")**, not live
-AWS data. Live specs, spot pricing, quotas, and capacity are roadmapped behind
-the `Finder` seam (they need AWS credentials / a backend proxy, which a browser
-can't provide directly).
+The bundled catalog is an **approximate snapshot ("as of 2026-07")**, not live
+AWS data. Live specs, spot pricing, and quotas are available behind the `Finder`
+seam via the Node-only [`./live` finder](docs/catalog.md#live-data-the-live-finder-node-only)
+(they need AWS credentials, which a browser can't hold safely); a browser live
+path through a backend proxy is still roadmapped.
 
 ## Status
 
-**v0.1.0 — offline find foundation.** Natural-language search over a bundled
-catalog, fully offline. Live-AWS data, spot pricing, and the `spawn-ts`
-instance-picker integration are tracked on the roadmap.
+**Offline find + an opt-in live AWS finder.** Natural-language search over the
+bundled catalog works fully offline and is the default. For Node/CLI/server
+consumers, `@spore-host/truffle-ts/live` adds live `DescribeInstanceTypes`
+search, on-demand pricing, spot prices (per AZ, with savings and trend), and
+vCPU quota checks. A browser live path and the `spawn-ts` instance-picker
+integration are tracked on the roadmap.
 
 ## Documentation
 

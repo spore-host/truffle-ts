@@ -10,3 +10,15 @@ export type { LiveFinderOptions } from "./live-finder.js";
 export { fetchOnDemandPrice, parseOnDemandUsd } from "./pricing.js";
 export type { PricingRegion } from "./pricing.js";
 export { mapInstanceType } from "./mapping.js";
+export { fetchSpotPrices, reduceSpotHistory, SPOT_PRODUCT } from "./spot.js";
+export {
+  canLaunch,
+  fetchQuotas,
+  fetchUsage,
+  letterPrefix,
+  quotaFamilyFor,
+  quotaIncreaseCommand,
+  vcpusForSize,
+  QUOTA_CODES,
+  QUOTA_FAMILIES,
+} from "./quotas.js";

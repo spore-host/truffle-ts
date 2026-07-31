@@ -93,6 +93,51 @@ const results = await find("cheapest graviton 8 cores 32gb", { finder });
 - The AWS SDK is an **optional dependency** reached only through the `./live`
   subpath, so the default `.` import never pulls it into a browser bundle.
 
-Spot pricing and quotas are the next step (truffle-ts#18). A **browser** live
-path (via a substrate/backend proxy, since a browser can't hold AWS creds) is a
-later follow-up — the Node finder above is the first, unblocked step.
+### Spot prices
+
+`getSpotPricing(instances, opts)` reads `DescribeSpotPriceHistory` for the given
+types across the configured regions:
+
+```ts
+const prices = await finder.getSpotPricing(results.map((r) => r.instance), {
+  showSavings: true,      // annotate onDemandPrice + savingsPercent
+  maxPrice: 0.5,          // $/hr ceiling; 0/unset means no ceiling
+});
+```
+
+- Every row carries an **`availabilityZone`**, because spot prices vary per AZ,
+  not per region. Without it, several prices for one type in one region are
+  indistinguishable.
+- `lookbackHours > 1` switches to **trend** mode and returns every history point
+  in the window (ordering is meaningful). `<= 1`/unset returns just the newest
+  observation per AZ — the current price.
+- `showSavings` needs `pricing:GetProducts`. If the on-demand lookup fails you
+  still get the spot price, just without the savings annotation.
+- Partial failures degrade: one region or one instance type failing doesn't lose
+  the others. Only a failure in **every** region throws — a total failure must
+  not be indistinguishable from "no spot data".
+
+### Quotas
+
+`getQuotas(opts)` returns the per-family On-Demand + Spot vCPU limits and current
+usage for one region; `canLaunch` is a pure check against that snapshot:
+
+```ts
+const quotas = await finder.getQuotas();               // servicequotas:GetServiceQuota
+                                                        // + ec2:DescribeInstances
+const verdict = finder.canLaunch(results[0].instance, quotas);
+if (!verdict.canLaunch) console.log(verdict.reason);    // names the family + headroom
+```
+
+- Families: `Standard`, `F`, `G` (shared with VT), `P`, `X`, `Inf`, `Trn`, `DL`.
+- Pass `skipUsage: true` to skip the `DescribeInstances` pass (limits only).
+- A family whose lookup failed is listed in **`incomplete`**, and an unknown
+  limit yields `canLaunch: true` with a reason saying so — a missing quota must
+  not read as "limit 0". A false "you cannot launch this" is the worse error,
+  because it blocks a launch that would have succeeded.
+- If the *usage* read fails, every family is marked `incomplete`: 0 used
+  overstates headroom, so it must not present as a clean slate.
+
+A **browser** live path (via a substrate/backend proxy, since a browser can't
+hold AWS creds) is a later follow-up — the Node finder above is the first,
+unblocked step.

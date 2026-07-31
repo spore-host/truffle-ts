@@ -8,6 +8,45 @@ Pre-1.0, breaking changes bump the MINOR version.
 
 ## [Unreleased]
 
+### Added
+- **Spot pricing + quota surfacing on the live finder** (#18) — `AwsLiveFinder`
+  completes the `LiveFinder` seam:
+  - `getSpotPricing(instances, opts)` over `DescribeSpotPriceHistory`. Each
+    result carries an **`availabilityZone`** (spot prices vary per AZ, not per
+    region), plus optional `productType`/`timestamp`. `lookbackHours > 1`
+    switches to **trend** mode (every history point, ordering meaningful); `<= 1`
+    returns the newest observation per AZ. `showSavings` annotates
+    `onDemandPrice`/`savingsPercent` from the Pricing API — fetched once per
+    instance type, since on-demand doesn't vary by AZ. `maxPrice` filters only
+    when positive (0 means "no ceiling", not "free only").
+  - `getQuotas(opts)` over `servicequotas:GetServiceQuota` +
+    `ec2:DescribeInstances`, returning per-family On-Demand/Spot vCPU limits and
+    usage for the eight families (`Standard`, `F`, `G`+VT, `P`, `X`, `Inf`,
+    `Trn`, `DL`); `skipUsage` drops the usage pass. `canLaunch(instance, quotas,
+    spot?)` is a pure verdict against that snapshot.
+  - New exported types: `QuotaFamily`, `QuotaInfo`, `QuotaOptions`,
+    `QuotaVerdict`; `SpotPriceResult`/`SpotOptions` gained the fields above.
+  - Ports Go `pkg/aws.GetSpotPricing` and `pkg/quotas`, preserving both of that
+    code's hard-won fixes: partial failures degrade (one region/type/family
+    failing keeps the rest) but a **total** failure throws rather than reading as
+    "no data" (Go #63), and the quota family is derived from the leading
+    letter-**run** so multi-letter families (`dl`, `vt`, `trn`, `inf`) aren't
+    misfiled under a single-letter case (Go #64).
+  - Diverges from Go deliberately, in four places: an unknown quota limit permits
+    the launch with a reason saying so (a false "cannot launch" is the worse
+    error); a failed usage read marks **every** family `incomplete`, since 0 used
+    overstates headroom; the usage scan paginates (Go reads only the first page);
+    and an unparseable size yields `undefined` rather than a silent guess of 2.
+  - `@aws-sdk/client-service-quotas` joins the **optional** dependencies, still
+    reachable only through the `./live` subpath — the default `.` import stays
+    SDK-free (the isolation test covers the new modules).
+
+### Fixed
+- The live-finder test stub compared `EC2Client.config.region` — a resolver
+  *function*, not a string — so per-region branches never matched and the
+  "partial results when one region fails" test was vacuously green. The stub now
+  awaits the resolver.
+
 ## [0.4.2] — 2026-07-22
 
 ### Changed

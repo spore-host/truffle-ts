@@ -53,7 +53,16 @@ export {
 } from "./core/pattern.js";
 
 // The Finder seam + the default bundled-catalog implementation + its data.
-export type { Finder, LiveFinder, SpotPriceResult, SpotOptions } from "./core/finder.js";
+export type {
+  Finder,
+  LiveFinder,
+  SpotPriceResult,
+  SpotOptions,
+  QuotaFamily,
+  QuotaInfo,
+  QuotaOptions,
+  QuotaVerdict,
+} from "./core/finder.js";
 export { BundledFinder } from "./data/bundled-finder.js";
 export { loadBundledCatalog, CATALOG_AS_OF } from "./data/catalog.js";
 export { onDemandPrice, estimatePriceByFamily, EC2Pricing } from "./data/pricing.js";

@@ -47,7 +47,7 @@ For consumers that want control over a stage:
 - **`LiveFinder`** — the extension a live-AWS backend implements:
   `getEnabledRegions()`, `getSpotPricing(instances, opts)`, `getQuotas(opts)`,
   `canLaunch(instance, quotas, spot?)`. Implemented by `AwsLiveFinder` on the
-  [`./live` subpath](catalog.md#live-data-the-live-finder-node-only).
+  [`./live` subpath](catalog.md#live-data-the-live-finder).
 - **`loadBundledCatalog()`**, **`CATALOG_AS_OF`** — the raw snapshot + its date.
 - **`onDemandPrice(type)`**, **`estimatePriceByFamily(type)`**, **`EC2Pricing`** —
   static pricing.

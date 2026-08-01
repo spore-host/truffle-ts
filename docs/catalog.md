@@ -44,9 +44,13 @@ inf/trn) plus representative graviton, Intel, and AMD CPU families across sizes.
   a size multiplier, for anything not in the table.
 - `onDemandPrice(type)` — the exact table if present, else the estimate.
 
-Live pricing (the AWS Price List **Query** API) needs IAM credentials + SigV4 and
-isn't browser-feasible; it belongs behind a live `Finder`. The unauthenticated
-bulk offer files are too large / CORS-uncertain for a direct browser fetch.
+Live pricing (the AWS Price List **Query** API) needs IAM credentials + SigV4, so
+it belongs behind a live `Finder` rather than in the default offline path — but it
+*is* browser-feasible: `api.pricing.us-east-1.amazonaws.com` answers a preflight
+from `https://spore.host` with `access-control-allow-origin: *`, and SigV4 over
+short-lived STS credentials works in a tab. The unauthenticated bulk offer files
+are a different matter: they're hundreds of MB, which rules them out for a browser
+fetch on size alone.
 
 ## Regenerating from live AWS (`gen-catalog`)
 
@@ -70,11 +74,11 @@ instance type must exist in the catalog — keeps passing.
 The older `scripts/seed-catalog.mjs` (hand-curated specs) remains as the
 bootstrap fallback for when AWS isn't reachable.
 
-## Live data: the `./live` finder (Node only)
+## Live data: the `./live` finder
 
 Since 0.4.0 there's an opt-in **live** finder that queries real AWS at runtime
-instead of the bundled snapshot — for CLI/server/Node consumers (a browser can't
-hold AWS credentials safely or reach these endpoints):
+instead of the bundled snapshot — for CLI, server, and **browser** consumers
+alike:
 
 ```ts
 import { find } from "@spore-host/truffle-ts";
@@ -138,6 +142,26 @@ if (!verdict.canLaunch) console.log(verdict.reason);    // names the family + he
 - If the *usage* read fails, every family is marked `incomplete`: 0 used
   overstates headroom, so it must not present as a clean slate.
 
-A **browser** live path (via a substrate/backend proxy, since a browser can't
-hold AWS creds) is a later follow-up — the Node finder above is the first,
-unblocked step.
+### Running the live finder in a browser
+
+No proxy is needed, and the earlier claim that one was is wrong on both of its
+premises:
+
+- **The endpoints are CORS-open.** Preflighted from `Origin: https://spore.host`,
+  `ec2`, `api.pricing`, and `servicequotas` in `us-east-1` each return
+  `access-control-allow-origin: *`, `access-control-allow-methods: POST`, and
+  `access-control-allow-headers: content-type,x-amz-target,authorization`.
+- **A browser can hold usable credentials** — not a long-lived access key, but a
+  short-lived STS session. spawn-ts's `credsFromIdToken` exchanges a Globus OIDC
+  `id_token` for `AssumeRoleWithWebIdentity` credentials that live in the tab and
+  expire on their own; pass them straight to `AwsLiveFinder`.
+
+```ts
+import { AwsLiveFinder } from "@spore-host/truffle-ts/live";
+const finder = new AwsLiveFinder({ regions: "us-east-1", credentials });
+```
+
+What still argues for `BundledFinder` as the default is cost and latency, not
+reachability: the live path spends API calls, wants `pricing:GetProducts` for
+savings annotations, and pulls the AWS SDK into the bundle (which is why it sits
+behind the `./live` subpath).

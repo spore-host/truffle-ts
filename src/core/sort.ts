@@ -24,18 +24,42 @@ function comparePrice(a: number, b: number, ascending: boolean): number {
   return ascending ? pa - pb : pb - pa;
 }
 
+/**
+ * Price confidence tier — the primary key of any price-ranked sort (#39).
+ *
+ * Price ranking is a THREE-tier ordering, not a price comparison with an
+ * exception: a real price, then an estimate, then nothing at all. Treating
+ * provenance and magnitude as two independent comparisons gets the middle case
+ * wrong — an entry with no price would outrank an estimate, which is backwards,
+ * since an estimate is weak evidence and no price is none.
+ *
+ * An estimate must never win a price-ranked query. That's the one query where a
+ * bad number does maximum damage: it doesn't merely misreport, it actively
+ * recommends the instance we have the worst data for. A `* estimated` footnote on
+ * row 1 of a list the user asked to be ordered by price does not undo the order.
+ *
+ * Sinking estimates rather than dropping them keeps them discoverable — someone
+ * searching for a brand-new accelerator should still find it, just not be told
+ * it's the cheap option.
+ */
+function priceTier(it: InstanceType): 0 | 1 | 2 {
+  const p = it.onDemandPrice;
+  if (p == null || p <= 0) return 2; // unknown — includes a 0, which is never a real price
+  return it.estimatedPrice === true ? 1 : 0;
+}
+
 /** Return a new array of results ranked by preference (default = newest gen first). */
 export function sortResults(results: InstanceType[], pref: SortPreference): InstanceType[] {
   const sorted = [...results];
   sorted.sort((a, b) => {
     switch (pref) {
-      case "cheapest": {
-        const c = comparePrice(a.onDemandPrice ?? 0, b.onDemandPrice ?? 0, true);
-        if (c !== 0) return c;
-        break;
-      }
+      case "cheapest":
       case "expensive": {
-        const c = comparePrice(a.onDemandPrice ?? 0, b.onDemandPrice ?? 0, false);
+        // Confidence first: a real price beats an estimate beats no price,
+        // regardless of the magnitudes. Only then compare the numbers.
+        const t = priceTier(a) - priceTier(b);
+        if (t !== 0) return t;
+        const c = comparePrice(a.onDemandPrice ?? 0, b.onDemandPrice ?? 0, pref === "cheapest");
         if (c !== 0) return c;
         break;
       }

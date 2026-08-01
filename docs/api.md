@@ -51,7 +51,8 @@ For consumers that want control over a stage:
   [`./live` subpath](catalog.md#live-data-the-live-finder).
 - **`loadBundledCatalog()`**, **`CATALOG_AS_OF`** — the raw snapshot + its date.
 - **`onDemandPrice(type)`**, **`estimatePriceByFamily(type)`**, **`EC2Pricing`** —
-  static pricing.
+  static pricing. The first two return **`number | undefined`**; `undefined` means
+  no price is available and must render as unknown, never as `0`.
 
 ## Types
 

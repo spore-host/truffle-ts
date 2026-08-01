@@ -34,21 +34,52 @@ export const EC2Pricing: Record<string, number> = {
   "g6.xlarge": 0.8048, "g6.12xlarge": 4.6016,
   "g6e.xlarge": 1.861,
   "p3.2xlarge": 3.06, "p3.8xlarge": 12.24, "p3.16xlarge": 24.48,
-  "p4d.24xlarge": 32.7726,
-  "p5.48xlarge": 98.32,
+  // p4d/p5 corrected against the live Price List API (2026-08-01). The prior
+  // values (32.7726 / 98.32) disagreed with instances.json by 1.5–1.8×, and the
+  // live pull settled it in the catalog's favour: two static tables in one
+  // package had drifted, so "what does a p5.48xlarge cost" depended on whether
+  // you called find() or onDemandPrice(). catalog.test.ts now asserts they agree.
+  "p4d.24xlarge": 21.9576,
+  "p5.48xlarge": 55.04,
+  "p5.4xlarge": 6.88,
+  "g3s.xlarge": 0.75, "g3.4xlarge": 1.14, "g3.8xlarge": 2.28, "g3.16xlarge": 4.56,
+  "p2.xlarge": 0.9, "p2.8xlarge": 7.2, "p2.16xlarge": 14.4,
   // AWS accelerators
   "inf2.xlarge": 0.7582, "inf2.48xlarge": 12.98,
   "trn1.2xlarge": 1.3438, "trn1.32xlarge": 21.5,
 };
 
 // Family "large" (2 vCPU) base $/hr, ported from libs/pricing estimatePriceByFamily.
+//
+// g3/g3s/p2 added from a real Price List pull (2026-08-01) — the estimator's
+// $0.10 default had been guessing them at 3.5–4.5× under. p2.16xlarge is the worst
+// case: guessed $3.20, real $14.40.
 const basePriceLarge: Record<string, number> = {
   t2: 0.0928, t3: 0.0832, t3a: 0.0752, t4g: 0.0672,
   m5: 0.096, m5a: 0.086, m5n: 0.119, m6i: 0.096, m6a: 0.086, m7i: 0.1008,
   c5: 0.085, c5a: 0.077, c5n: 0.108, c6i: 0.085, c6a: 0.077, c7i: 0.0893,
   r5: 0.126, r5a: 0.113, r6i: 0.126,
-  g4dn: 0.263, g5: 0.503, p3: 0.765, p4d: 0.6827,
+  g3: 0.285, g3s: 0.375, g4dn: 0.263, g5: 0.503, p2: 0.45, p3: 0.765, p4d: 0.6827,
 };
+
+/**
+ * Accelerator families the estimator must NOT guess for.
+ *
+ * The family × size heuristic works for CPU boxes, where price tracks size
+ * roughly linearly within a generation. It fails catastrophically on
+ * accelerators, because the GPU dominates the price and the size multiplier knows
+ * nothing about it. Unlisted family → $0.10 base × 2.0 → **$0.20/hr for a 72×B200
+ * rack** that really costs around $100/hr (#39). That number then won every
+ * `cheapest` ranking, presenting the most expensive machine in the catalog as the
+ * budget option.
+ *
+ * A wrong price on an accelerator is also the most expensive kind to be wrong
+ * about, since these are the instances where an hour's mistake costs real money.
+ * So for these families with no entry in `basePriceLarge`, we return "unknown"
+ * instead of a plausible-looking fiction. A missing price is a state every
+ * consumer already handles; a fabricated one is indistinguishable from a real one.
+ */
+const ACCELERATOR_FAMILY = /^(g|p|inf|trn|dl|vt|f)[0-9]/;
 
 // Size multiplier relative to "large" = 1.0, ported from libs/pricing.
 const sizeMultiplier: Record<string, number> = {
@@ -59,19 +90,33 @@ const sizeMultiplier: Record<string, number> = {
 
 /**
  * Rough on-demand $/hr for an instance type not in the exact table: the family's
- * "large" base price × a size multiplier. Falls back to $0.10 base / 2× (xlarge)
- * multiplier for unknowns. Ports Go estimatePriceByFamily.
+ * "large" base price × a size multiplier. Ports Go estimatePriceByFamily.
+ *
+ * Returns **`undefined`** for an accelerator family we have no base price for,
+ * rather than guessing — see `ACCELERATOR_FAMILY`. Unknown CPU families still get
+ * the $0.10 × 2.0 fallback, where being wrong costs cents rather than $100/hr.
  */
-export function estimatePriceByFamily(instanceType: string): number {
+export function estimatePriceByFamily(instanceType: string): number | undefined {
   const parts = instanceType.split(".");
   if (parts.length < 2) return 0.1;
   const [family, size] = parts;
-  const base = basePriceLarge[family] ?? 0.1;
-  const mult = sizeMultiplier[size] ?? 2.0;
-  return base * mult;
+  const base = basePriceLarge[family];
+  if (base === undefined) {
+    // No basis for this family. On an accelerator, say so.
+    if (ACCELERATOR_FAMILY.test(family)) return undefined;
+    return 0.1 * (sizeMultiplier[size] ?? 2.0);
+  }
+  return base * (sizeMultiplier[size] ?? 2.0);
 }
 
-/** On-demand $/hr — the exact table if present, else the family estimate. */
-export function onDemandPrice(instanceType: string): number {
+/**
+ * On-demand $/hr — the exact table if present, else the family estimate.
+ *
+ * `undefined` means "no price available", which callers must render as unknown
+ * (the portal shows `—`). It is deliberately not 0: zero is a claim, and it sorts
+ * first in a cheapest ranking, so a missing price expressed as 0 recommends the
+ * instance it knows least about (#42).
+ */
+export function onDemandPrice(instanceType: string): number | undefined {
   return EC2Pricing[instanceType] ?? estimatePriceByFamily(instanceType);
 }

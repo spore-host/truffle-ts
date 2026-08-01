@@ -84,6 +84,12 @@ browser tab holding STS credentials. The `spawn-ts` instance-picker integration 
 the remaining Go commands are tracked in
 [#36](https://github.com/spore-host/truffle-ts/issues/36).
 
+truffle-ts stays on `0.x.y` **indefinitely**; there is no planned 1.0.0, so a MINOR
+bump is the breaking-change signal for the life of the project. Its version line is
+its own and is not synchronised with Go `truffle`'s — parity there is a behavioural
+claim with documented divergences, audited per-command in #36 rather than asserted
+by matching version numbers.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md) — the pipeline, the `Finder` seam, layering.

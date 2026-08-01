@@ -42,5 +42,11 @@ truffle-ts is a **library first**. The published package is the code under
 ## Pull requests
 
 Work on a branch, open a PR against `main`, keep CI green (typecheck + test +
-build), and update `CHANGELOG.md` under `[Unreleased]`. Pre-1.0, breaking changes
-bump the MINOR version.
+build), and update `CHANGELOG.md` under `[Unreleased]`.
+
+truffle-ts stays on `0.x.y` **indefinitely** — there is no planned 1.0.0 — so
+breaking changes bump the MINOR version permanently, not as a pre-release
+convention. Don't propose a 1.0.0, and don't bump the version to match Go
+`truffle`: the two version lines are independent on purpose, because parity is a
+behavioural claim with documented divergences ([#36](https://github.com/spore-host/truffle-ts/issues/36)),
+not an assertion that two numbers agree.

@@ -8,6 +8,13 @@ Pre-1.0, breaking changes bump the MINOR version.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-31
+
+Breaking, and MINOR because pre-1.0: `onDemandPrice()` and
+`estimatePriceByFamily()` now return `number | undefined`, because the release's
+central fix is that **a price is either real or absent — never guessed**. Render
+`undefined` as unknown, never as `0`.
+
 ### Added
 - **Spot pricing + quota surfacing on the live finder** (#18) — `AwsLiveFinder`
   completes the `LiveFinder` seam:
@@ -233,7 +240,8 @@ Initial release — the offline find foundation.
   Vite demo build (→ `site/`), `package.json` `exports` map (`.` + `./metadata`),
   TypeDoc, and CI (typecheck + test + build) (issue #1).
 
-[Unreleased]: https://github.com/spore-host/truffle-ts/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/spore-host/truffle-ts/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/spore-host/truffle-ts/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/spore-host/truffle-ts/compare/v0.4.0...v0.4.2
 [0.4.0]: https://github.com/spore-host/truffle-ts/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/spore-host/truffle-ts/compare/v0.2.0...v0.3.0

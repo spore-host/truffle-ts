@@ -64,22 +64,25 @@ them anywhere in your app. truffle-ts never reaches back into the host.
 | `core/` | the pure find engine — parse, resolve, filter, sort, explain. No DOM, no AWS. |
 | `metadata/` | static hardware catalogs (processors, GPUs, network tiers, sizes). |
 | `data/` | the bundled instance catalog + a `Finder` over it + static pricing. |
-| `Finder` seam | swap the bundled catalog for a live-AWS/substrate backend later. |
+| `Finder` seam | swap the bundled catalog for a live-AWS/substrate backend. |
 
 The bundled catalog is an **approximate snapshot ("as of 2026-07")**, not live
 AWS data. Live specs, spot pricing, and quotas are available behind the `Finder`
-seam via the Node-only [`./live` finder](docs/catalog.md#live-data-the-live-finder-node-only)
-(they need AWS credentials, which a browser can't hold safely); a browser live
-path through a backend proxy is still roadmapped.
+seam via the [`./live` finder](docs/catalog.md#live-data-the-live-finder), which
+runs in Node **and in a browser** — the endpoints it calls are CORS-open and it
+accepts injected short-lived STS credentials. The bundled finder stays the default
+because the live path costs API calls and latency, not because a browser can't
+reach it.
 
 ## Status
 
 **Offline find + an opt-in live AWS finder.** Natural-language search over the
-bundled catalog works fully offline and is the default. For Node/CLI/server
-consumers, `@spore-host/truffle-ts/live` adds live `DescribeInstanceTypes`
-search, on-demand pricing, spot prices (per AZ, with savings and trend), and
-vCPU quota checks. A browser live path and the `spawn-ts` instance-picker
-integration are tracked on the roadmap.
+bundled catalog works fully offline and is the default. `@spore-host/truffle-ts/live`
+adds live `DescribeInstanceTypes` search, on-demand pricing, spot prices (per AZ,
+with savings and trend), and vCPU quota checks — usable from Node, a server, or a
+browser tab holding STS credentials. The `spawn-ts` instance-picker integration and
+the remaining Go commands are tracked in
+[#36](https://github.com/spore-host/truffle-ts/issues/36).
 
 ## Documentation
 

@@ -55,10 +55,18 @@ interface Finder {
 
 - **`BundledFinder`** (the default) runs `search` as a single in-memory pass over
   the [bundled catalog](catalog.md) — offline, no credentials, no cost.
-- A future **live** finder (DescribeInstanceTypes / spot / quotas, behind a
-  backend proxy) implements the `LiveFinder` sub-interface, which adds those
-  methods as extensions so the core `Finder` contract never breaks. `search`
-  is `async` from day one precisely so this swap needs no signature change.
+- **`AwsLiveFinder`** ([`./live`](catalog.md#live-data-the-live-finder), shipped
+  since 0.4.0) implements the `LiveFinder` sub-interface —
+  `DescribeInstanceTypes` for specs, `DescribeSpotPriceHistory` for per-AZ spot,
+  Service Quotas + `DescribeInstances` for headroom. Those arrive as *extensions*,
+  so the core `Finder` contract never breaks; `search` is `async` from day one
+  precisely so this swap needs no signature change.
+- The live finder needs no backend proxy. Every endpoint it calls is CORS-open
+  (`access-control-allow-origin: *`, `POST`, `authorization` allowed) and a browser
+  can hold short-lived STS credentials, so it runs in a tab as well as in Node. The
+  AWS SDK stays an **optional dependency** behind the `./live` subpath — that keeps
+  it out of a default browser bundle, which is a bundle-size and cost-safety
+  decision, not a reachability one.
 
 ## Layering (the pure-core rule)
 

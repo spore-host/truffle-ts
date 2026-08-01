@@ -29,6 +29,10 @@ export type TokenType =
   | "vcpu"
   | "memory"
   | "gpuCount"
+  /** Bare "gpu"/"accelerator" — "must have at least one GPU", no model named. */
+  | "gpuAny"
+  /** Per-GPU VRAM, e.g. "80gb vram" — distinct from `memory` (system RAM). */
+  | "gpuMemory"
   | "architecture"
   | "networkSpeed"
   | "efa"
@@ -60,6 +64,13 @@ export interface ParsedQuery {
   minMemory: number;
   /** Minimum number of GPUs; 0 = unconstrained. */
   gpuCount: number;
+  /**
+   * True when the query asked for a GPU without naming one ("gpu", "accelerator").
+   * Distinct from `gpus`, which holds named models — this only requires gpus >= 1.
+   */
+  requireGpu: boolean;
+  /** Minimum VRAM per GPU in GiB; 0 = unconstrained. Not system memory. */
+  minGpuMemory: number;
   /** "x86_64" | "arm64"; empty = both. */
   architecture: Architecture | "";
   /** Minimum network bandwidth in Gbps; 0 = unconstrained. */
@@ -70,6 +81,12 @@ export interface ParsedQuery {
   exactMatch: boolean;
   /** Parsed tokens in input order (diagnostics). */
   rawTokens: Token[];
+  /**
+   * Words the parser could not classify, in input order. Surfacing these is what
+   * turns a silently-dropped constraint into a visible one: "gpu with 80gb" used
+   * to discard "gpu" with no signal at all (#37).
+   */
+  ignored: string[];
   /** Application names (resolved to hardware in buildCriteria). */
   apps: string[];
 }
@@ -80,6 +97,29 @@ export type SortPreference = "default" | "cheapest" | "expensive" | "newest" | "
 const numberRegex = /^\d+$/;
 const memoryRegex = /^(\d+(?:\.\d+)?)\s*(gb|gib|g)$/;
 const networkSpeedRegex = /^(\d+)\s*(gbps|g)$/;
+
+/**
+ * Words meaning "any GPU will do". Not in GPUAliases, which maps to specific
+ * cards — a bare "gpu" names no model, so it can't resolve to instance types
+ * and has to become a filter instead (#37).
+ */
+const gpuAnyWords = new Set([
+  "gpu", "gpus", "accelerator", "accelerators", "graphics-card", "graphics-cards",
+]);
+
+/** Words that mark a preceding memory figure as per-GPU VRAM rather than DRAM. */
+const vramWords = new Set(["vram", "hbm", "gpu-memory", "gpumemory"]);
+
+/**
+ * The attached count form, "8gpu"/"8gpus". Go's parser only handles the spaced
+ * form ("8 gpus"), so `8gpu` falls through to `unknown` there — which is why both
+ * projects' headline example, "nvidia h100 8gpu efa", has always silently dropped
+ * its count. Same defect class as #37: a constraint that disappears without a
+ * word. A bare "8x" is deliberately *not* accepted — it reads as a multiplier of
+ * anything (nodes, tasks), so guessing GPUs would be inventing a constraint
+ * rather than reading one.
+ */
+const attachedGpuCountRegex = /^(\d+)gpus?$/;
 
 // Longest multi-word key across the processor/GPU catalogs and GPU aliases,
 // computed from the data so the phrase matcher stays correct as it grows.
@@ -122,9 +162,10 @@ export function parseQuery(query: string): ParsedQuery {
   const pq: ParsedQuery = {
     vendors: [], processors: [], gpus: [], sizes: [],
     minVcpu: 0, minPhysCores: 0, minMemory: 0, gpuCount: 0,
+    requireGpu: false, minGpuMemory: 0,
     architecture: "", minNetworkGbps: 0,
     requireEfa: false, requireNestedV: false, exactMatch: false,
-    rawTokens: tokens, apps: [],
+    rawTokens: tokens, ignored: [], apps: [],
   };
 
   for (const token of tokens) {
@@ -137,16 +178,49 @@ export function parseQuery(query: string): ParsedQuery {
       case "physicalCores": { const v = parseInt(token.value, 10); if (!Number.isNaN(v)) pq.minPhysCores = v; break; }
       case "memory": { const v = parseMemory(token.value); if (v !== null) pq.minMemory = v; break; }
       case "gpuCount": { const v = parseInt(token.value, 10); if (!Number.isNaN(v)) pq.gpuCount = v; break; }
+      case "gpuAny": pq.requireGpu = true; break;
+      case "gpuMemory": { const v = parseMemory(token.value); if (v !== null) pq.minGpuMemory = v; break; }
       case "architecture": pq.architecture = token.value as Architecture; break;
       case "networkSpeed": { const v = parseNetworkSpeed(token.value); if (v !== null) pq.minNetworkGbps = v; break; }
       case "efa": pq.requireEfa = true; break;
       case "nestedVirt": pq.requireNestedV = true; break;
       case "app": pq.apps.push(token.value); break;
+      case "unknown": if (!isFiller(token.value)) pq.ignored.push(token.raw); break;
     }
   }
 
+  // "gpu with 80gb" almost certainly means an 80 GiB card, not 80 GiB of DRAM —
+  // that misreading is exactly what made the query return CPU-only instances
+  // (#37). Reinterpret a bare memory figure as VRAM when the query asked for a
+  // GPU and gave no explicit VRAM. A named model ("a100 80gb") is left alone:
+  // resolveGpuInstances already pins the exact types, so system memory there is
+  // more likely a genuine second constraint.
+  if (pq.requireGpu && pq.minGpuMemory === 0 && pq.minMemory > 0 && pq.gpus.length === 0) {
+    pq.minGpuMemory = pq.minMemory;
+    pq.minMemory = 0;
+  }
+
+  // Any VRAM or GPU-count constraint implies a GPU is required, so callers only
+  // ever need to check requireGpu rather than all three.
+  if (pq.minGpuMemory > 0 || pq.gpuCount > 0) pq.requireGpu = true;
+
   validate(pq);
   return pq;
+}
+
+/**
+ * Grammatical filler that carries no constraint. These are excluded from
+ * `ignored` so the diagnostic stays signal — reporting "ignored: with, for"
+ * trains users to ignore the notice, which defeats its purpose.
+ */
+const fillerWords = new Set([
+  "with", "for", "and", "or", "a", "an", "the", "of", "on", "in", "to",
+  "at", "least", "min", "minimum", "max", "maximum", "that", "has", "have",
+  "i", "need", "want", "me", "my", "something", "instance", "instances",
+  "type", "types", "machine", "node", "nodes", "please",
+]);
+function isFiller(word: string): boolean {
+  return fillerWords.has(word);
 }
 
 function classifyTokens(words: string[]): Token[] {
@@ -179,6 +253,12 @@ function classifyTokens(words: string[]): Token[] {
       tokens.push({ type: "gpu", value: GPUAliases[word], raw: word });
     } else if (SizeCategories[word]) {
       tokens.push({ type: "size", value: word, raw: word });
+    } else if (attachedGpuCountRegex.test(word)) {
+      tokens.push({ type: "gpuCount", value: word.replace(/gpus?$/, ""), raw: word });
+    } else if (gpuAnyWords.has(word)) {
+      // Bare "gpu" with no preceding count. A count ("4 gpus") is consumed by the
+      // number branch below as a gpuCount token before it ever reaches here.
+      tokens.push({ type: "gpuAny", value: "gpu", raw: word });
     } else if (word === "efa") {
       tokens.push({ type: "efa", value: "efa", raw: word });
     } else if (word === "nested-virt" || word === "nested-virtualization" || word === "nestedvirt") {
@@ -206,13 +286,25 @@ function classifyTokens(words: string[]): Token[] {
         tokens.push({ type: "gpuCount", value: word, raw: `${word} ${next}` });
         i++;
       } else if (next !== undefined && (memoryRegex.test(next) || next.endsWith("gb") || next.endsWith("gib") || next.endsWith("g"))) {
-        tokens.push({ type: "memory", value: word + next, raw: word + next });
-        i++;
+        // "80 gb vram" — the unit is a separate word, so VRAM is two ahead.
+        if (vramWords.has(words[i + 2] ?? "")) {
+          tokens.push({ type: "gpuMemory", value: word + next, raw: `${word}${next} ${words[i + 2]}` });
+          i += 2;
+        } else {
+          tokens.push({ type: "memory", value: word + next, raw: word + next });
+          i++;
+        }
       } else {
         tokens.push({ type: "unknown", value: word, raw: word });
       }
     } else if (memoryRegex.test(word)) {
-      tokens.push({ type: "memory", value: word, raw: word });
+      // "80gb vram" — the unit is attached, so the VRAM marker is the next word.
+      if (vramWords.has(words[i + 1] ?? "")) {
+        tokens.push({ type: "gpuMemory", value: word, raw: `${word} ${words[i + 1]}` });
+        i++;
+      } else {
+        tokens.push({ type: "memory", value: word, raw: word });
+      }
     } else if (qualitativeKeywords.has(word)) {
       tokens.push({ type: "qualitative", value: word, raw: word });
     } else {

@@ -101,6 +101,68 @@ describe("parseQuery extras", () => {
   });
 });
 
+// #37: a bare "gpu" named no card, so it resolved to nothing and was dropped
+// silently; "80gb" was read as system RAM. Together they returned CPU-only
+// Graviton instances for "gpu with 80gb for training".
+describe("parseQuery — bare GPU requests (#37)", () => {
+  it("a bare gpu word sets requireGpu", () => {
+    for (const q of ["gpu", "gpus", "accelerator", "i need a gpu"]) {
+      expect(parseQuery(q).requireGpu).toBe(true);
+    }
+  });
+
+  it("reinterprets a bare memory figure as VRAM when a GPU was asked for", () => {
+    const pq = parseQuery("gpu with 80gb for training");
+    expect(pq.requireGpu).toBe(true);
+    expect(pq.minGpuMemory).toBe(80);
+    // The figure moves to VRAM rather than being counted twice — 80 GiB of DRAM
+    // was never the ask, and leaving it set would over-constrain the search.
+    expect(pq.minMemory).toBe(0);
+  });
+
+  it("leaves memory as system RAM when a card is named", () => {
+    // resolveGpuInstances already pins p4d/p4de here, so "80gb" is more likely a
+    // genuine second constraint than a restatement of the card's VRAM.
+    const pq = parseQuery("a100 80gb");
+    expect(pq.minMemory).toBe(80);
+    expect(pq.minGpuMemory).toBe(0);
+  });
+
+  it("an explicit vram marker parses as VRAM in both spacings", () => {
+    expect(parseQuery("gpu 80gb vram").minGpuMemory).toBe(80);
+    expect(parseQuery("gpu 80 gb vram").minGpuMemory).toBe(80);
+    expect(parseQuery("gpu 141gb hbm").minGpuMemory).toBe(141);
+    // …and does not also constrain system RAM.
+    expect(parseQuery("gpu 80gb vram").minMemory).toBe(0);
+  });
+
+  it("a VRAM or count constraint implies requireGpu", () => {
+    expect(parseQuery("80gb vram").requireGpu).toBe(true);
+    expect(parseQuery("4 gpus").requireGpu).toBe(true);
+  });
+
+  it("reports unclassified words in `ignored` but not grammatical filler", () => {
+    const pq = parseQuery("gpu with 80gb for training");
+    // "training" was understood by nobody; say so rather than dropping it.
+    expect(pq.ignored).toEqual(["training"]);
+    // "with"/"for" carry no constraint — listing them would train users to
+    // ignore the notice, which defeats its purpose.
+    expect(pq.ignored).not.toContain("with");
+    expect(pq.ignored).not.toContain("for");
+  });
+
+  it("the attached count form parses (Go drops it)", () => {
+    // "nvidia h100 8gpu efa" is both READMEs' headline example, and its count has
+    // always been discarded — Go's parser only handles the spaced form.
+    const pq = parseQuery("nvidia h100 8gpu efa");
+    expect(pq.gpuCount).toBe(8);
+    expect(pq.ignored).toEqual([]);
+    expect(parseQuery("2gpus").gpuCount).toBe(2);
+    // A bare "8x" is not a GPU count — it multiplies anything.
+    expect(parseQuery("8x").gpuCount).toBe(0);
+  });
+});
+
 describe("sortPreference", () => {
   const table: Array<[string, string]> = [
     ["cheapest graviton", "cheapest"],

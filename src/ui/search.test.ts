@@ -80,4 +80,24 @@ describe("SearchApp", () => {
     await submit(app);
     expect(app.el.querySelector(".empty")).toBeTruthy();
   });
+
+  it("names the words it couldn't read, so a dropped constraint is visible (#37)", async () => {
+    const app = mount();
+    setQuery(app, "gpu with 80gb for training");
+    await submit(app);
+    const msg = app.el.querySelector(".q-msg")!;
+    expect(msg.textContent).toContain("didn't understand: training");
+    expect(msg.className).toContain("warn");
+    // Results are still shown — a partly-read query degrades, it doesn't fail.
+    expect(app.el.querySelector("table")).toBeTruthy();
+  });
+
+  it("stays quiet when every word was understood", async () => {
+    const app = mount();
+    setQuery(app, "graviton 32gb");
+    await submit(app);
+    const msg = app.el.querySelector(".q-msg")!;
+    expect(msg.textContent).not.toContain("didn't understand");
+    expect(msg.className).not.toContain("warn");
+  });
 });

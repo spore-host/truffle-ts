@@ -81,6 +81,6 @@ export {
 } from "./core/resolve.js";
 export { buildCriteria, buildInstanceTypePattern } from "./core/criteria.js";
 export type { SearchCriteria } from "./core/criteria.js";
-export { matchesFilters, extractFamily } from "./core/filter.js";
+export { matchesFilters, extractFamily, perGpuMemoryGiB } from "./core/filter.js";
 export { explainMatch } from "./core/explain.js";
 export { sortResults, instanceGeneration } from "./core/sort.js";

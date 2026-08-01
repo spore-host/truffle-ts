@@ -58,5 +58,25 @@ export function matchesFilters(it: InstanceType, opts: FilterOptions): boolean {
 
   if (opts.nestedVirt && !it.nestedVirt) return false;
 
+  const gpus = it.gpus ?? 0;
+  if (opts.requireGpu && gpus < 1) return false;
+  if (opts.minGpus && opts.minGpus > 0 && gpus < opts.minGpus) return false;
+
+  if (opts.minGpuMemoryGiB && opts.minGpuMemoryGiB > 0) {
+    // An entry with no GPU, or a GPU entry with no VRAM recorded, cannot be shown
+    // to clear a VRAM floor — so it doesn't clear it. Excluding the
+    // under-specified entry is the safe direction: the alternative is presenting
+    // an unverified type as a confirmed match.
+    if (gpus < 1 || !it.gpuMemoryMib) return false;
+    if (perGpuMemoryGiB(it) < opts.minGpuMemoryGiB) return false;
+  }
+
   return true;
+}
+
+/** VRAM per GPU in GiB; 0 when unknown. `gpuMemoryMib` is the aggregate. */
+export function perGpuMemoryGiB(it: InstanceType): number {
+  const gpus = it.gpus ?? 0;
+  if (gpus < 1 || !it.gpuMemoryMib) return 0;
+  return it.gpuMemoryMib / gpus / 1024;
 }

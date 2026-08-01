@@ -3,7 +3,19 @@
 // query, pick a sort, see the matching instance types with the reasons they
 // matched and an estimated $/hr. DOM lives only here; the library is pure.
 
-import { find, CATALOG_AS_OF, type FindResult, type SortPreference } from "../index.js";
+import {
+  find,
+  findInstances,
+  parseQuery,
+  looksLikePattern,
+  BundledFinder,
+  CATALOG_AS_OF,
+  type FindResult,
+  type SortPreference,
+} from "../index.js";
+
+/** The demo's finder — shared so repeated searches reuse one catalog load. */
+const finder = new BundledFinder();
 
 const EXAMPLES = [
   "nvidia h100 8gpu efa",
@@ -77,17 +89,31 @@ export class SearchApp {
     const query = this.input.value.trim();
     if (!query) return;
     let results: FindResult[];
+    let ignored: string[] = [];
     try {
       const sort = (this.sortSel.value || undefined) as SortPreference | undefined;
-      results = await find(query, sort ? { sort } : {});
+      // Parse first on the NL path so the words the parser couldn't classify can
+      // be shown. A dropped word that produces no signal is how "gpu with 80gb"
+      // came to silently return CPU-only instances (#37) — the query looked
+      // understood because nothing said otherwise.
+      if (looksLikePattern(query)) {
+        results = await find(query, sort ? { sort } : {});
+      } else {
+        const parsed = parseQuery(query);
+        ignored = parsed.ignored;
+        results = await findInstances(finder, parsed, sort ? { sort } : {});
+      }
     } catch (err) {
       this.msgEl.textContent = (err as Error).message;
       this.msgEl.className = "q-msg bad";
       this.resultsEl.innerHTML = "";
       return;
     }
-    this.msgEl.textContent = `${results.length} match${results.length === 1 ? "" : "es"}`;
-    this.msgEl.className = "q-msg";
+    const count = `${results.length} match${results.length === 1 ? "" : "es"}`;
+    this.msgEl.textContent = ignored.length > 0
+      ? `${count} — didn't understand: ${ignored.join(", ")}`
+      : count;
+    this.msgEl.className = ignored.length > 0 ? "q-msg warn" : "q-msg";
     this.renderResults(results);
   }
 

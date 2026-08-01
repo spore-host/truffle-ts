@@ -2,8 +2,16 @@
 
 A `find` query is free text. It's lowercased, split on whitespace, and each token
 is classified against the metadata catalogs — **longest phrase first**, so
-multi-word names resolve as single tokens. Unknown words are ignored (they don't
-fail the query). Order mostly doesn't matter; combine any of the below.
+multi-word names resolve as single tokens. Order mostly doesn't matter; combine
+any of the below.
+
+Words the parser can't classify don't fail the query, but they aren't swallowed
+either: they land in `ParsedQuery.ignored` so a consumer can say *"didn't
+understand: training"*. That matters because a query is more dangerous when it
+looks understood than when it errors — `gpu with 80gb for training` used to return
+CPU-only Graviton types with nothing to suggest a constraint had been dropped
+(#37). Grammatical filler (`with`, `for`, `a`, `the`, `need`, …) is excluded from
+`ignored`: a notice that fires on every query is one users learn to skip.
 
 ## Token types
 
@@ -16,7 +24,9 @@ fail the query). Order mostly doesn't matter; combine any of the below.
 | `N cores` / `N vcpus` / `N cpu` | min vCPU | `16 cores` → vCPUs ≥ 16 |
 | `N physical cores` | min physical cores | `8 physical cores` → cores ≥ 8 |
 | `N gb` / `N gib` | min memory | `32gb` → memory ≥ 32 GiB |
-| `N gpus` / `N gpu` | min GPU count | `8 gpus` |
+| `N gpus` / `N gpu` / `Ngpu` | min GPU count | `8 gpus`, `8gpu` → GPUs ≥ 8 |
+| bare `gpu` / `accelerator` | any GPU | `gpu` → GPU instances only, no model pinned |
+| `N gb vram` / `N gb hbm` | min VRAM **per GPU** | `80gb vram` → each card ≥ 80 GiB |
 | `arm64` / `x86_64` (+ aliases) | architecture | `arm64`, `aarch64`, `amd64` |
 | `Ngbps` / `Ng` / tier alias | min network | `100gbps`, `100g`, `ultranet` |
 | `efa` / `lowlatency` | EFA required | `efa` → EFA-capable families only |
@@ -31,6 +41,17 @@ Aliases resolve to canonical forms — `inf`→`inferentia`, `a10`→`a10g`,
 
 - **GPU queries** resolve to that GPU's *exact instance types* (e.g. `h100` →
   `p5.48xlarge`), not a family glob.
+- **A bare `gpu`** names no card, so there is nothing to resolve to — it becomes a
+  post-filter (`gpus ≥ 1`) instead. GPU *count* and *VRAM* are post-filters for the
+  same reason, and VRAM is compared **per card** (`gpuMemoryMib / gpus`): 4 × 16 GiB
+  of T4 is 64 GiB in aggregate and must not satisfy `80gb vram`.
+- **A bare memory figure alongside a bare `gpu`** is read as **VRAM**, not system
+  RAM — `gpu with 80gb` means an 80 GiB card. When a card *is* named (`a100 80gb`)
+  the figure stays system RAM, since the card already pins the instance types and a
+  second constraint is the more likely reading.
+- An instance whose VRAM isn't recorded **fails** a VRAM floor rather than passing
+  it. It can't be shown to clear the bar, and presenting an unverified type as a
+  confirmed match is the worse error.
 - **Vendor / processor / network / EFA** resolve to *families*; a **size**
   narrows the family pattern to those size suffixes.
 - **App names** contribute recommended families and minimum vCPU/memory. When an
@@ -38,7 +59,8 @@ Aliases resolve to canonical forms — `inf`→`inferentia`, `a10`→`a10g`,
   (`paraview nvidia` → only the GPU families paraview recommends). If that
   intersection is empty (`igv nvidia` — a CPU app + GPU vendor), the query
   matches nothing rather than everything.
-- **vCPU / memory / cores / architecture / nested-virt** apply as post-filters.
+- **vCPU / memory / cores / architecture / nested-virt / GPU count / VRAM** apply
+  as post-filters.
 
 ## Qualitative sort words
 

@@ -59,6 +59,48 @@ describe("find (offline, bundled catalog)", () => {
   });
 });
 
+// The two bugs the portal surfaced: a query the demo itself suggested returned
+// CPU-only Graviton instances, because "gpu" resolved to no card and so vanished
+// while "80gb" was read as system RAM (#37); and a parsed GPU count never reached
+// a filter (#38).
+describe("find — GPU constraints reach the results (#37, #38)", () => {
+  it("gpu with 80gb for training → only GPUs, all with >= 80 GiB per card", async () => {
+    const results = await find("gpu with 80gb for training");
+    expect(results.length).toBeGreaterThan(0);
+    for (const { instance } of results) {
+      expect(instance.gpus ?? 0).toBeGreaterThanOrEqual(1);
+      expect(instance.gpuMemoryMib! / instance.gpus! / 1024).toBeGreaterThanOrEqual(80);
+    }
+    // The specific regression: this query used to return Graviton CPU types.
+    expect(results.some((r) => r.instance.instanceType.startsWith("m7g."))).toBe(false);
+  });
+
+  it("a bare gpu query returns nothing but GPU instances", async () => {
+    const results = await find("gpu");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every((r) => (r.instance.gpus ?? 0) >= 1)).toBe(true);
+  });
+
+  it("8 gpus excludes 1/2/4-GPU types, and says why it matched", async () => {
+    const results = await find("8 gpus");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every((r) => (r.instance.gpus ?? 0) >= 8)).toBe(true);
+    expect(results[0].reasons).toContain(`GPUs: ${results[0].instance.gpus} >= 8`);
+  });
+
+  it("a count beyond anything in the catalog returns empty, not everything", async () => {
+    // The failure mode of an unapplied filter is a *full* result set, so the
+    // empty case is the one worth asserting.
+    expect(await find("512 gpus")).toEqual([]);
+  });
+
+  it("nvidia h100 8gpu efa (the README example) explains its GPU count", async () => {
+    const p5 = (await find("nvidia h100 8gpu efa")).find((r) => r.instance.instanceType === "p5.48xlarge")!;
+    expect(p5).toBeDefined();
+    expect(p5.reasons).toContain("GPUs: 8 >= 8");
+  });
+});
+
 describe("find — glob/regex pattern routing", () => {
   it("a glob (m7g*) matches instance-type names directly, not the NL parser", async () => {
     const results = await find("m7g*");

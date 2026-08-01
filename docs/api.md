@@ -32,7 +32,8 @@ For consumers that want control over a stage:
 - **`buildCriteria(pq): SearchCriteria`** — `{ pattern: RegExp, filters:
   FilterOptions }`. Plus `buildInstanceTypePattern(pq)`.
 - **`matchesFilters(instance, filters): boolean`** — the in-memory filter.
-  Plus `extractFamily(type)`.
+  Plus `extractFamily(type)` and `perGpuMemoryGiB(instance)` (VRAM **per card** —
+  `gpuMemoryMib` is the aggregate across all of them).
 - **`explainMatch(instance, pq): string[]`** — human match reasons.
 - **`sortResults(instances, pref): InstanceType[]`** — ranking.
   Plus `instanceGeneration(type)`.

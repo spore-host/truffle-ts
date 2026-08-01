@@ -11,7 +11,7 @@ import {
 } from "../metadata/index.js";
 import type { InstanceType } from "./types.js";
 import type { ParsedQuery } from "./parser.js";
-import { extractFamily } from "./filter.js";
+import { extractFamily, perGpuMemoryGiB } from "./filter.js";
 
 /** Annotate why `it` matched `query`, in the Go phrasing/order. */
 export function explainMatch(it: InstanceType, query: ParsedQuery): string[] {
@@ -48,6 +48,23 @@ export function explainMatch(it: InstanceType, query: ParsedQuery): string[] {
     if (info.families.includes(family)) {
       reasons.push(`GPU family: ${info.name} (${info.useCase})`);
       break;
+    }
+  }
+
+  // GPU count / VRAM. Every applied constraint explains itself — the absence of
+  // a "GPUs: n >= m" line is precisely how #38's unfiltered gpuCount went
+  // unnoticed, so these are reported even when no card was named.
+  const gpus = it.gpus ?? 0;
+  if (query.gpuCount > 0 && gpus >= query.gpuCount) {
+    reasons.push(`GPUs: ${gpus} >= ${query.gpuCount}`);
+  } else if (query.requireGpu && gpus > 0 && query.gpus.length === 0) {
+    reasons.push(`GPUs: ${gpus}${it.gpuModel ? ` × ${it.gpuModel}` : ""}`);
+  }
+
+  if (query.minGpuMemory > 0) {
+    const perGpu = perGpuMemoryGiB(it);
+    if (perGpu >= query.minGpuMemory) {
+      reasons.push(`GPU memory: ${Math.round(perGpu)} GiB/GPU >= ${Math.round(query.minGpuMemory)} GiB`);
     }
   }
 

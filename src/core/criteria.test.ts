@@ -60,4 +60,18 @@ describe("buildCriteria", () => {
     const c2 = buildCriteria(parseQuery("paraview 32 cores"));
     expect(c2.filters.minVcpus).toBe(32);
   });
+
+  // #37/#38: the parser held these constraints and buildCriteria never forwarded
+  // them, so the filter had nothing to apply. This is the seam that leaked.
+  it("forwards the GPU constraints to the filters", () => {
+    const c = buildCriteria(parseQuery("gpu with 80gb for training"));
+    expect(c.filters.requireGpu).toBe(true);
+    expect(c.filters.minGpuMemoryGiB).toBe(80);
+    // Reinterpreted as VRAM, so system memory is left unconstrained.
+    expect(c.filters.minMemoryGiB).toBe(0);
+
+    const c2 = buildCriteria(parseQuery("8 gpus"));
+    expect(c2.filters.minGpus).toBe(8);
+    expect(c2.filters.requireGpu).toBe(true);
+  });
 });

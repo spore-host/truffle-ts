@@ -63,6 +63,21 @@ export interface FilterOptions {
   /** Restrict to a family prefix, e.g. "m6i"; empty matches all. */
   instanceFamily?: string;
   nestedVirt?: boolean;
+  /**
+   * Require at least one GPU. Set by a query that asked for a GPU without naming
+   * a model ("gpu with 80gb"), where there is no card to resolve to instance
+   * types — without this filter such a query constrains nothing and happily
+   * returns CPU-only instances (#37).
+   */
+  requireGpu?: boolean;
+  /** Minimum GPU count, e.g. 8 from "8 gpus" (#38). */
+  minGpus?: number;
+  /**
+   * Minimum VRAM **per GPU** in GiB, compared against `gpuMemoryMib / gpus`.
+   * Per-GPU, not aggregate: an 8×16 GiB T4 box has 128 GiB of `gpuMemoryMib` and
+   * must not satisfy "80gb vram".
+   */
+  minGpuMemoryGiB?: number;
 }
 
 /** One ranked result: the matched instance plus human-readable match reasons. */

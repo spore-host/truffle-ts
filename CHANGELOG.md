@@ -42,6 +42,36 @@ Pre-1.0, breaking changes bump the MINOR version.
     SDK-free (the isolation test covers the new modules).
 
 ### Fixed
+- **GPU constraints now reach the results** (#37, #38). One seam leaked three
+  defects: the parser held constraints that `buildCriteria` never forwarded, so the
+  filter had nothing to apply.
+  - A **bare `gpu`/`accelerator`** named no card, so it resolved to no instance
+    types and was dropped in silence. `gpu with 80gb for training` — the query the
+    portal itself suggested — returned CPU-only Graviton types. It now sets
+    `requireGpu`, a post-filter, because a request naming no model has nothing to
+    resolve *to*.
+  - A **bare memory figure alongside a bare `gpu`** is now read as **VRAM**:
+    `gpu with 80gb` means an 80 GiB card, not 80 GiB of DRAM. A named card
+    (`a100 80gb`) keeps system-RAM semantics, since the card already pins the
+    types. Explicit `80gb vram` / `141gb hbm` markers parse in either spacing.
+  - **`gpuCount` was parsed and never filtered** (#38 — a faithful port of the same
+    Go gap): `8 gpus` matched 1-GPU instances. New `minGpus` filter. The attached
+    form `8gpu` now parses too; Go handles only the spaced form, so both projects'
+    headline example, `nvidia h100 8gpu efa`, had always discarded its count.
+  - VRAM compares **per card** (`gpuMemoryMib / gpus`), exported as
+    `perGpuMemoryGiB`: 4 × 16 GiB of T4 is 64 GiB in aggregate and must not satisfy
+    `80gb vram`. An instance with no VRAM recorded **fails** a VRAM floor rather
+    than passing it — presenting an unverified type as a confirmed match is the
+    worse error.
+  - `ParsedQuery.ignored` collects the words the parser couldn't classify, and the
+    demo renders them (*"didn't understand: training"*). Grammatical filler is
+    excluded, since a notice that fires on every query is one users learn to skip.
+    That's the general lesson of #37: **a dropped constraint must not be
+    indistinguishable from a satisfied one.** Each new constraint also explains
+    itself in `explainMatch` (`GPUs: 8 >= 8`, `GPU memory: 80 GiB/GPU >= 80 GiB`) —
+    the absent reason line is exactly how #38 stayed invisible.
+  - New `FilterOptions` fields `requireGpu`/`minGpus`/`minGpuMemoryGiB`; new
+    `ParsedQuery` fields `requireGpu`/`minGpuMemory`/`ignored`.
 - The live-finder test stub compared `EC2Client.config.region` — a resolver
   *function*, not a string — so per-region branches never matched and the
   "partial results when one region fails" test was vacuously green. The stub now

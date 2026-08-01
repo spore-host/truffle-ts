@@ -51,4 +51,31 @@ describe("explainMatch", () => {
   it("explains an explicit architecture match", () => {
     expect(explainMatch(c7g, parseQuery("arm64"))).toContain("Architecture: arm64");
   });
+
+  // Every applied constraint explains itself. The missing "GPUs: n >= m" line is
+  // exactly how #38's unfiltered gpuCount stayed invisible for so long.
+  describe("GPU count + VRAM reasons", () => {
+    const p5vram: InstanceType = { ...p5, gpuMemoryMib: 655360 };
+
+    it("explains a GPU count", () => {
+      expect(explainMatch(p5, parseQuery("8 gpus"))).toContain("GPUs: 8 >= 8");
+    });
+
+    it("names the card for a bare gpu request, where no model was asked for", () => {
+      expect(explainMatch(p5, parseQuery("gpu"))).toContain("GPUs: 8 × H100");
+    });
+
+    it("explains VRAM per GPU, not the aggregate", () => {
+      // 640 GiB across 8 cards is 80 GiB each; reporting 640 would misread as a
+      // single enormous card.
+      expect(explainMatch(p5vram, parseQuery("gpu 80gb vram")))
+        .toContain("GPU memory: 80 GiB/GPU >= 80 GiB");
+    });
+
+    it("says nothing about GPUs when the query didn't ask", () => {
+      const reasons = explainMatch(p5vram, parseQuery("h100 efa"));
+      expect(reasons.some((r) => r.startsWith("GPUs:"))).toBe(false);
+      expect(reasons.some((r) => r.startsWith("GPU memory:"))).toBe(false);
+    });
+  });
 });

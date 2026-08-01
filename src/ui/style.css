@@ -58,6 +58,9 @@ form.q button:hover { filter: brightness(1.1); }
 
 .q-msg { margin: 8px 0; color: var(--muted); font-size: 12px; min-height: 1em; }
 .q-msg.bad { color: #f85149; }
+/* Results are still shown, but a word we couldn't read means the answer may not
+   be the one asked for — muted grey would let that pass unnoticed. */
+.q-msg.warn { color: #d29922; }
 
 .results { margin-top: 12px; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }

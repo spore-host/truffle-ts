@@ -20,7 +20,7 @@ inf/trn) plus representative graviton, Intel, and AMD CPU families across sizes.
   "architecture": "x86_64",
   "threadsPerCore": 2,
   "nestedVirt": false,
-  "onDemandPrice": 98.32,
+  "onDemandPrice": 55.04,
   "gpus": 8,
   "gpuModel": "H100",
   "gpuManufacturer": "nvidia",
@@ -34,6 +34,13 @@ inf/trn) plus representative graviton, Intel, and AMD CPU families across sizes.
 > demo shows a "bundled catalog · as of 2026-07" badge to make this explicit. A
 > few legacy/brand-new GPU types not offered in the generated region are carried
 > from the earlier hand seed and flagged `estimatedPrice: true`.
+>
+> **A price is either real or absent — never guessed.** `onDemandPrice` is only
+> present when it came from a real Price List pull. A type we have no price for
+> omits the field, so it reads as unknown rather than cheap. Two invariants the
+> tests enforce: no entry ever carries a non-positive price (a `0` sorts *first*,
+> so it recommends the instance we know least about), and no priced GPU entry
+> comes in under $0.05 per GPU-hour.
 
 ## Pricing
 
@@ -41,8 +48,18 @@ inf/trn) plus representative graviton, Intel, and AMD CPU families across sizes.
 
 - `EC2Pricing` — an exact us-east-1 on-demand `$/hr` table for common types.
 - `estimatePriceByFamily(type)` — a fallback: the family's "large" base price ×
-  a size multiplier, for anything not in the table.
-- `onDemandPrice(type)` — the exact table if present, else the estimate.
+  a size multiplier, for anything not in the table. Returns **`undefined`** for an
+  accelerator family with no base price, instead of guessing: the heuristic works
+  for CPU boxes, where price tracks size, and fails catastrophically on GPUs, where
+  the accelerator dominates and the multiplier knows nothing about it. It once
+  reported **$0.20/hr for a 72xB200 rack** that really costs ~$100/hr.
+- `onDemandPrice(type)` — the exact table if present, else the estimate. May be
+  `undefined`; render that as unknown, never as `0`.
+
+Both static sources — `EC2Pricing` and the bundled catalog — are asserted to agree
+within 10% wherever they overlap. Two static price tables in one package drift,
+and when they did, the answer to "what does a `p5.48xlarge` cost" depended on
+whether you called `find()` or `onDemandPrice()`.
 
 Live pricing (the AWS Price List **Query** API) needs IAM credentials + SigV4, so
 it belongs behind a live `Finder` rather than in the default offline path — but it
@@ -70,6 +87,13 @@ brand-new p5e/p6e-gb200) are **carried over** from the previous catalog and
 flagged `estimatedPrice: true`, so GPU-name resolution still works offline and a
 **drift-invariant test** (`src/data/catalog.test.ts`) — every `GPUDatabase`
 instance type must exist in the catalog — keeps passing.
+
+A carried entry keeps its **specs** but only keeps a **price** that came from a
+real pull; otherwise the field is dropped. The generator also refuses to write a
+catalog containing a non-positive price at all, and filters price rows by
+`marketoption=OnDemand` rather than taking the API's first row — `p5.4xlarge`
+returns a `CapacityBlock` row at `$0.00/hr` *before* its real `$6.88` on-demand
+row, which is how a 1xH100 machine came to be listed as free.
 
 The older `scripts/seed-catalog.mjs` (hand-curated specs) remains as the
 bootstrap fallback for when AWS isn't reachable.

@@ -689,12 +689,11 @@
     "architecture": "x86_64",
     "threadsPerCore": 2,
     "nestedVirt": false,
-    "onDemandPrice": 3.2,
+    "onDemandPrice": 4.56,
     "gpus": 8,
     "gpuModel": "M60",
     "gpuManufacturer": "nvidia",
-    "gpuMemoryMib": 65536,
-    "estimatedPrice": true
+    "gpuMemoryMib": 65536
   },
   {
     "instanceType": "g3.4xlarge",
@@ -704,12 +703,11 @@
     "architecture": "x86_64",
     "threadsPerCore": 2,
     "nestedVirt": false,
-    "onDemandPrice": 0.8,
+    "onDemandPrice": 1.14,
     "gpus": 1,
     "gpuModel": "M60",
     "gpuManufacturer": "nvidia",
-    "gpuMemoryMib": 8192,
-    "estimatedPrice": true
+    "gpuMemoryMib": 8192
   },
   {
     "instanceType": "g3.8xlarge",
@@ -719,12 +717,11 @@
     "architecture": "x86_64",
     "threadsPerCore": 2,
     "nestedVirt": false,
-    "onDemandPrice": 1.6,
+    "onDemandPrice": 2.28,
     "gpus": 1,
     "gpuModel": "M60",
     "gpuManufacturer": "nvidia",
-    "gpuMemoryMib": 8192,
-    "estimatedPrice": true
+    "gpuMemoryMib": 8192
   },
   {
     "instanceType": "g3s.xlarge",
@@ -734,12 +731,11 @@
     "architecture": "x86_64",
     "threadsPerCore": 2,
     "nestedVirt": false,
-    "onDemandPrice": 0.2,
+    "onDemandPrice": 0.75,
     "gpus": 1,
     "gpuModel": "M60",
     "gpuManufacturer": "nvidia",
-    "gpuMemoryMib": 8192,
-    "estimatedPrice": true
+    "gpuMemoryMib": 8192
   },
   {
     "instanceType": "g4ad.16xlarge",
@@ -2052,12 +2048,11 @@
     "architecture": "x86_64",
     "threadsPerCore": 2,
     "nestedVirt": false,
-    "onDemandPrice": 3.2,
+    "onDemandPrice": 14.4,
     "gpus": 8,
     "gpuModel": "K80",
     "gpuManufacturer": "nvidia",
-    "gpuMemoryMib": 98304,
-    "estimatedPrice": true
+    "gpuMemoryMib": 98304
   },
   {
     "instanceType": "p2.8xlarge",
@@ -2067,12 +2062,11 @@
     "architecture": "x86_64",
     "threadsPerCore": 2,
     "nestedVirt": false,
-    "onDemandPrice": 1.6,
+    "onDemandPrice": 7.2,
     "gpus": 1,
     "gpuModel": "K80",
     "gpuManufacturer": "nvidia",
-    "gpuMemoryMib": 12288,
-    "estimatedPrice": true
+    "gpuMemoryMib": 12288
   },
   {
     "instanceType": "p2.xlarge",
@@ -2082,12 +2076,11 @@
     "architecture": "x86_64",
     "threadsPerCore": 2,
     "nestedVirt": false,
-    "onDemandPrice": 0.2,
+    "onDemandPrice": 0.9,
     "gpus": 1,
     "gpuModel": "K80",
     "gpuManufacturer": "nvidia",
-    "gpuMemoryMib": 12288,
-    "estimatedPrice": true
+    "gpuMemoryMib": 12288
   },
   {
     "instanceType": "p3.16xlarge",
@@ -2101,8 +2094,7 @@
     "gpus": 8,
     "gpuModel": "V100",
     "gpuManufacturer": "nvidia",
-    "gpuMemoryMib": 131072,
-    "estimatedPrice": true
+    "gpuMemoryMib": 131072
   },
   {
     "instanceType": "p3.2xlarge",
@@ -2116,8 +2108,7 @@
     "gpus": 1,
     "gpuModel": "V100",
     "gpuManufacturer": "nvidia",
-    "gpuMemoryMib": 16384,
-    "estimatedPrice": true
+    "gpuMemoryMib": 16384
   },
   {
     "instanceType": "p3.8xlarge",
@@ -2131,8 +2122,7 @@
     "gpus": 1,
     "gpuModel": "V100",
     "gpuManufacturer": "nvidia",
-    "gpuMemoryMib": 16384,
-    "estimatedPrice": true
+    "gpuMemoryMib": 16384
   },
   {
     "instanceType": "p3dn.24xlarge",
@@ -2203,7 +2193,7 @@
     "memoryMib": 262144,
     "architecture": "x86_64",
     "nestedVirt": false,
-    "onDemandPrice": 0,
+    "onDemandPrice": 6.88,
     "gpus": 1,
     "gpuModel": "H100",
     "gpuManufacturer": "nvidia",
@@ -2217,7 +2207,6 @@
     "architecture": "x86_64",
     "threadsPerCore": 2,
     "nestedVirt": false,
-    "onDemandPrice": 9.6,
     "gpus": 8,
     "gpuModel": "H200",
     "gpuManufacturer": "nvidia",
@@ -2262,7 +2251,6 @@
     "architecture": "x86_64",
     "threadsPerCore": 2,
     "nestedVirt": false,
-    "onDemandPrice": 0.2,
     "gpus": 72,
     "gpuModel": "B200",
     "gpuManufacturer": "nvidia",

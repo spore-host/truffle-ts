@@ -42,6 +42,45 @@ Pre-1.0, breaking changes bump the MINOR version.
     SDK-free (the isolation test covers the new modules).
 
 ### Fixed
+- **A price is now either real or absent — never fabricated** (#39, #42). Three
+  bad prices shipped in the bundled catalog, and each was wrong in a way that a
+  footnote could not repair, because they were wrong *in the ranking*.
+  - **`p6e-gb200.36xlarge` at `$0.2000/hr`** (#39) — a 72×B200 rack that really
+    costs ~$100/hr. The number came from `estimatePriceByFamily`'s unknown-family
+    fallback ($0.10 base × 2.0), and it **won `find("cheapest 64gb")`**, presenting
+    the most expensive machine in the catalog as the budget option. The family ×
+    size heuristic is sound for a CPU box, where price tracks size within a
+    generation, and worthless for an accelerator, where the GPU dominates the price
+    and the multiplier knows nothing about it — so `estimatePriceByFamily` now
+    returns **`undefined`** for an accelerator family it has no base price for.
+    15 of the catalog's 19 GPU families were falling through to that $0.10 default.
+  - **`p5.4xlarge` at `$0.00`** (#42) — a 1×H100 machine the catalog claimed was
+    free. This was never missing data: that type returns **two** Price List rows,
+    and `gen-catalog.mjs`'s `--max-results 1` took the `CapacityBlock` row
+    ($0.00/hr, correct in its own context) instead of the `OnDemand` row ($6.88).
+    Zero is the most damaging possible wrong price because **zero sorts first**, so
+    any cheapest-first UI recommends the instance with the worst data. The
+    generator now filters rows by `marketoption`, rejects a non-positive price
+    outright, and **refuses to write** a catalog containing one.
+  - **`pricing.ts` disagreed with `instances.json`** on `p4d.24xlarge` and
+    `p5.48xlarge` by 1.5–1.8× (#39). A live pull settled it in the catalog's
+    favour ($21.96 and $55.04); the static table was corrected, and a test now
+    asserts the two agree within 10% wherever they overlap. Two static price
+    tables in one package drift, and while these did, the answer to "what does a
+    `p5.48xlarge` cost" depended on whether you called `find()` or
+    `onDemandPrice()`.
+  - **Ranking is now three-tier**: a real price, then an estimate, then no price —
+    so an estimate can never win `cheapest` *or* `expensive`. Provenance is the
+    primary key; magnitude only breaks ties within a tier. Estimates are sunk
+    rather than dropped, so a brand-new accelerator is still discoverable, just
+    never advertised as cheap.
+  - Real us-east-1 prices pulled for `g3`/`g3s`/`p2` (2026-08-01), where the
+    estimator had been guessing 3.5–4.5× low — `p2.16xlarge` was $3.20 against a
+    real $14.40.
+
+  **Breaking:** `onDemandPrice(type)` and `estimatePriceByFamily(type)` now return
+  `number | undefined`. Render `undefined` as unknown (the portal shows `—`), never
+  as `0`.
 - **GPU constraints now reach the results** (#37, #38). One seam leaked three
   defects: the parser held constraints that `buildCriteria` never forwarded, so the
   filter had nothing to apply.

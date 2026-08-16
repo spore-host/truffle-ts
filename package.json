@@ -67,12 +67,12 @@
     "@aws-sdk/client-pricing": "^3.700.0",
     "@aws-sdk/client-service-quotas": "^3.700.0",
     "@types/node": "^26.1.1",
-    "@vitest/coverage-v8": "^2.1.9",
+    "@vitest/coverage-v8": "^4.1.10",
     "happy-dom": "^20.11.0",
     "typedoc": "^0.28.20",
     "typescript": "^5.6.0",
     "vite": "^8.1.5",
-    "vitest": "^2.1.0",
+    "vitest": "^4.1.10",
     "yaml": "^2.9.0"
   }
 }

@@ -4,24 +4,31 @@ import {
   looksLikeRegex,
   patternToRegex,
   wildcardToRegex,
+  isBareFamily,
 } from "./pattern.js";
+import { find } from "./find.js";
 
 describe("looksLikePattern", () => {
   // Explicit glob / regex → the pattern path.
   const wantPattern = [
     "m7*", "c7?.large", "*.metal", "c7.*",
     "c[6-8]i.large", "m7i|c7i", "(m7i|c7i).large", "p5\\d",
+    // Exact types and bare families (Go LooksLikePattern, #263). These used to
+    // take the natural-language path, where "r8g.2xlarge" was an unknown word
+    // that constrained nothing and matched all 231 bundled types.
+    "c6i", "m7i.large", "trn1.32xlarge", "r8g.2xlarge", "  r8g.2xlarge  ", "g5", "m7i-flex",
+    "u-6tb1.112xlarge", "mac-m4.metal", "mac2.metal", "zz9q",
   ];
   for (const q of wantPattern) {
     it(`"${q}" → pattern path`, () => expect(looksLikePattern(q)).toBe(true));
   }
 
-  // NL phrases AND bare types/names — the deliberate divergence from Go: bare
-  // words go through the parser (so "a100"→A100 types, "c6i"→c6i family) rather
-  // than a name-pattern that would collide with GPU model names.
+  // NL phrases, and single words the parser fully understands — checked
+  // FIRST, as Go does, so a GPU name is never read as an instance-type name and
+  // "b200+" isn't taken for a regex (Go #130).
   const wantNaturalLanguage = [
     "8 cpus 32gb", "gpu instances", "cheapest with 4 gpus", "trainium",
-    "a100", "h100", "c6i", "m7i.large", "trn1.32xlarge", "graviton",
+    "a100", "h100", "graviton", "H100", "A100-80GB", "a100-80gb", "B200+", "h100!", "r8g 2xlarge",
   ];
   for (const q of wantNaturalLanguage) {
     it(`"${q}" → NL path`, () => expect(looksLikePattern(q)).toBe(false));
@@ -78,5 +85,29 @@ describe("patternToRegex", () => {
     const p = patternToRegex("c[6-8]i.large");
     expect(p.startsWith("^")).toBe(true);
     expect(p.endsWith("$")).toBe(true);
+  });
+});
+
+describe("exact types and bare families (Go #263 / #229)", () => {
+  it("a bare family is the whole family", () => {
+    const re = new RegExp(patternToRegex("g5"));
+    for (const m of ["g5.xlarge", "g5.48xlarge"]) expect(re.test(m), m).toBe(true);
+    for (const m of ["g5g.xlarge", "g6.xlarge"]) expect(re.test(m), m).toBe(false);
+    expect(isBareFamily("m7i-flex")).toBe(true);
+    expect(isBareFamily("g5.xlarge")).toBe(false);
+    expect(isBareFamily("h100x")).toBe(true); // shape only; the NL check runs first
+  });
+  it("an exact type matches only itself (Go TestParseQuery_PatternQueries)", () => {
+    const re = new RegExp(patternToRegex("r8g.2xlarge"));
+    expect(re.test("r8g.2xlarge")).toBe(true);
+    for (const m of ["r8g.4xlarge", "r8gd.2xlarge"]) expect(re.test(m), m).toBe(false);
+  });
+  it("find('r8g.2xlarge') returns that type, not the whole catalog", async () => {
+    expect((await find("r8g.2xlarge")).map((r) => r.instance.instanceType)).toEqual(["r8g.2xlarge"]);
+    expect((await find("trn1.32xlarge")).map((r) => r.instance.instanceType)).toEqual(["trn1.32xlarge"]);
+  });
+  it("find('g5') lists every g5 size and no g5g", async () => {
+    const fams = new Set((await find("g5")).map((r) => r.instance.instanceFamily));
+    expect([...fams]).toEqual(["g5"]);
   });
 });

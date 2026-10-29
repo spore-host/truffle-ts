@@ -1,32 +1,55 @@
 // Glob / regex pattern search — a port of the pattern path in the Go tool
 // (cmd/find.go looksLikePattern + cmd/search.go patternToRegex/wildcardToRegex).
 // `find` auto-detects when a query is an instance-type *pattern* ("m7i*",
-// "c[6-8]i\.large", "trn1.32xlarge") rather than a natural-language phrase, and
+// "c[6-8]i\.large", "trn1.32xlarge", "g5") rather than a natural-language phrase, and
 // matches it directly against instance-type names instead of running the parser.
 //
 // Pure string logic, no I/O.
 
 import { escapeRegex } from "./resolve.js";
+import { isRecognizedTerm } from "./parser.js";
 
 /**
- * Does this query look like an instance-type *pattern* (glob or regex) rather
- * than a natural-language phrase? True when it contains a glob wildcard (`*`/`?`)
- * or a regex metacharacter (see looksLikeRegex).
+ * Does this query look like an instance-type *pattern* — an exact type
+ * ("r8g.2xlarge"), a bare family ("g5", "trn1"), a glob ("m7i*") or a regex
+ * ("c[6-8]i.large") — rather than a natural-language phrase? Ports Go
+ * find.LooksLikePattern (v0.62, #263), in Go's order:
  *
- * DELIBERATE DIVERGENCE from the Go tool: Go also routes a bare single word
- * matching `^[a-z]+\d` (e.g. "a100", "c6i", "m7i.large") to the pattern path.
- * That collides with GPU model names — Go's `find a100` searches instance-type
- * *names* for `^a100$` and finds nothing, since no instance is literally named
- * "a100". truffle-ts instead sends bare words through the natural-language
- * parser, which resolves "a100" → the A100 instance types and "graviton" → its
- * families. To force a name pattern, use an explicit glob: `a100*`, `m7i*`,
- * `c6i.*`. (This is why parse still guards the no-constraint case, so a stray
- * unknown bare word can't fall through to a match-everything ".*".)
+ *   1. A single word the parser fully understands ("a100", "h100", "graviton3",
+ *      "a100-80gb", "b200+") is natural language — checked FIRST, since "+" is
+ *      also a regex indicator.
+ *   2. A glob wildcard or a regex metacharacter makes it a pattern.
+ *   3. A single word shaped like a family (letters then a generation digit:
+ *      "c6i", "trn1", "m7i.large") is a pattern.
+ *   4. So is a single dotted word whose family starts with a hyphenated word
+ *      ("u-6tb1.112xlarge", "mac-m4.metal").
+ *
+ * Before this, truffle-ts kept every bare word on the natural-language path, so
+ * an exact type such as "r8g.2xlarge" was an unknown word that constrained
+ * nothing and matched all 231 bundled types. Go's own vocabulary-first check
+ * (v0.51) removed the "a100 is not an instance name" collision that the old
+ * divergence existed to avoid.
  */
 export function looksLikePattern(query: string): boolean {
-  if (query.includes("*") || query.includes("?")) return true;
-  if (looksLikeRegex(query)) return true;
-  return false;
+  const q = query.trim();
+  const single = q !== "" && !/\s/.test(q);
+  if (single && isRecognizedTerm(q)) return false;
+  if (q.includes("*") || q.includes("?")) return true;
+  if (looksLikeRegex(q)) return true;
+  if (!single) return false;
+  if (/^[a-z]+\d/i.test(q)) return true;
+  return /^[a-z]+(?:-[a-z0-9]+)+\.[a-z0-9-]+$/i.test(q);
+}
+
+/**
+ * Whether a word is a bare family name — family-shaped and without a size:
+ * "g5", "m7i-flex", "trn1n". Stands in for Go's IsInstanceFamily snapshot
+ * (metadata.InstanceFamilies + the Nitro table), which truffle-ts does not
+ * carry: an unknown family-shaped word ("zz9q") is then searched as a family
+ * and matches nothing, which is also Go's result for it.
+ */
+export function isBareFamily(word: string): boolean {
+  return /^[a-z]+\d[a-z0-9-]*$/.test(word.toLowerCase()) || /^[a-z]+-[a-z0-9]+$/.test(word.toLowerCase());
 }
 
 /** Does the pattern contain regex metacharacters? Mirrors Go looksLikeRegex. */
@@ -44,6 +67,12 @@ export function looksLikeRegex(pattern: string): boolean {
  * globs go through wildcardToRegex.
  */
 export function patternToRegex(pattern: string): string {
+  // A bare family means the whole family: "g5" → every g5 size. It used to
+  // become ^g5$, which no instance type matches (Go #229).
+  const lower = pattern.toLowerCase();
+  if (!looksLikeRegex(pattern) && !/[*?.]/.test(pattern) && isBareFamily(lower)) {
+    return "^(" + escapeRegex(lower) + ")\\..*$";
+  }
   if (looksLikeRegex(pattern)) {
     let p = fixGlobStarsInRegex(pattern);
     p = escapeLiteralDots(p);

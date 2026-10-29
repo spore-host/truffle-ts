@@ -5,8 +5,15 @@ import {
   qualitativeTokens,
   parseMemory,
   parseNetworkSpeed,
+  memoryReadingNote,
+  suggestTerms,
+  editDistance,
+  isRecognizedTerm,
+  UnrecognizedQueryError,
   type ParsedQuery,
 } from "./parser.js";
+import { buildCriteria } from "./criteria.js";
+import { find } from "./find.js";
 
 // Ported 1:1 from the Go pkg/find/parser_test.go table.
 interface Case {
@@ -120,12 +127,14 @@ describe("parseQuery — bare GPU requests (#37)", () => {
     expect(pq.minMemory).toBe(0);
   });
 
-  it("leaves memory as system RAM when a card is named", () => {
-    // resolveGpuInstances already pins p4d/p4de here, so "80gb" is more likely a
-    // genuine second constraint than a restatement of the card's VRAM.
+  it("reads a named card's bare size as per-GPU memory, as Go does since #236", () => {
+    // truffle-ts used to keep this as host memory, so "a100 80gb" matched p4d's
+    // 40 GB A100s by their 1152 GiB of RAM. Go reads it as the 80 GB part.
     const pq = parseQuery("a100 80gb");
-    expect(pq.minMemory).toBe(80);
-    expect(pq.minGpuMemory).toBe(0);
+    expect(pq.minGpuMemory).toBe(80);
+    expect(pq.minMemory).toBe(0);
+    // An explicit marker says host memory.
+    expect(parseQuery("a100 80gb ram").minMemory).toBe(80);
   });
 
   it("an explicit vram marker parses as VRAM in both spacings", () => {
@@ -159,7 +168,7 @@ describe("parseQuery — bare GPU requests (#37)", () => {
     expect(pq.ignored).toEqual([]);
     expect(parseQuery("2gpus").gpuCount).toBe(2);
     // A bare "8x" is not a GPU count — it multiplies anything.
-    expect(parseQuery("8x").gpuCount).toBe(0);
+    expect(parseQuery("gpu 8x").gpuCount).toBe(0);
   });
 });
 
@@ -199,3 +208,103 @@ describe("unit parsers", () => {
 // Type-only touch so ParsedQuery stays exported/used.
 const _shape: ParsedQuery = parseQuery("intel");
 void _shape;
+
+// ── Ported from Go pkg/find/gpu_memory_test.go TestMemoryReading (#236) ──────
+// Rows Go has that truffle-ts can't parse yet are left out and named: "g5 24gb"
+// (family words) and "inference 24gb" (use-case words) — see the follow-up issue.
+describe("bare memory: host or per-GPU (Go TestMemoryReading)", () => {
+  const cases: [string, number, number, boolean][] = [
+    ["gpu 24gb", 0, 24, true],
+    ["gpu 24 gb", 0, 24, true],
+    ["gpus 24gb", 0, 24, true],
+    ["h100 80gb", 0, 80, true],
+    ["a100-80gb", 0, 80, true],
+    ["2 gpus 24gb", 0, 24, true],
+    ["a10g 64gb ram", 64, 0, false],
+    ["a10g 64gb memory", 64, 0, false],
+    ["a10g 64 gb ram", 64, 0, false],
+    ["a10g 64gb host memory", 64, 0, false],
+    ["24gb vram", 0, 24, false],
+    ["24gb gpu memory", 0, 24, false],
+    ["gpu 24gb per gpu", 0, 24, false],
+    ["a10g 24gb 64gb ram", 64, 24, true],
+    ["a10g 24gb vram 64gb", 64, 24, false],
+    ["amd turin 16 cores 64gb", 64, 0, false],
+    ["amd 16 cores 64gb memory", 64, 0, false],
+    ["graviton 32gb", 32, 0, false],
+  ];
+  for (const [q, host, gpu, note] of cases) {
+    it(q, () => {
+      const pq = parseQuery(q);
+      expect(pq.minMemory, "host").toBe(host);
+      expect(pq.minGpuMemory, "per GPU").toBe(gpu);
+      expect(pq.ignored).toEqual([]);
+      expect(memoryReadingNote(pq) !== "", "note").toBe(note);
+      const { filters } = buildCriteria(pq);
+      expect([filters.minGpuMemoryGiB, filters.minMemoryGiB]).toEqual([gpu, host]);
+    });
+  }
+  it("TestMemoryReadingNote", () => {
+    const got = memoryReadingNote(parseQuery("gpu 24gb"));
+    expect(got).toBe('Note: reading "24gb" as memory per GPU (at least 24 GB/GiB, as the GPU is sold); write "24gb ram" for host memory');
+  });
+});
+
+// ── Ported from Go pkg/find/unrecognized_test.go (#229) ──────────────────────
+describe("a query of only unknown words is refused, not run against everything", () => {
+  it("TestUnrecognizedQueryError", () => {
+    let err: unknown;
+    try {
+      parseQuery("gravitn zzqx");
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(UnrecognizedQueryError);
+    const uq = err as UnrecognizedQueryError;
+    expect(uq.terms).toEqual(["gravitn", "zzqx"]);
+    expect(uq.suggestions.gravitn).toBe("graviton");
+    expect(uq.suggestions.zzqx).toBeUndefined();
+    expect(uq.message).toMatch(/^no recognised search terms; unknown terms: "gravitn" \(did you mean "graviton"\?\), "zzqx"/);
+  });
+  it("TestSuggestTerms (the rows truffle-ts's vocabulary covers)", () => {
+    const got = suggestTerms(["xlrage", "h10", "zz9q", "turn", "qqqqqqqq"]);
+    expect(got).toEqual({ xlrage: "xlarge", h10: "h100", zz9q: "zz9q.*", turn: "turin" });
+  });
+  it("TestEditDistance", () => {
+    expect(editDistance("kitten", "sitting", 3)).toBe(3);
+    expect(editDistance("abc", "abc", 2)).toBe(0);
+    expect(editDistance("abc", "abcdef", 2)).toBe(3);
+    expect(editDistance("aaaa", "bbbb", 2)).toBe(3);
+  });
+  it("a recognised word alongside an unknown one still runs, and reports the unknown one", () => {
+    expect(parseQuery("graviton zzqx").ignored).toEqual(["zzqx"]);
+  });
+  it("find('zzqx') rejects instead of returning all 231 bundled types", async () => {
+    await expect(find("zzqx")).rejects.toBeInstanceOf(UnrecognizedQueryError);
+  });
+});
+
+// ── Ported from Go pkg/find/hyphenated_test.go (#130) ─────────────────────────
+describe("hyphenated / suffixed GPU spec strings", () => {
+  it("re-tokenize like their spaced form (TestNormalizeHyphenatedToken)", () => {
+    expect(parseQuery("a100-80gb").gpus).toEqual(["a100"]);
+    expect(parseQuery("h100!").gpus).toEqual(["h100"]);
+    expect(parseQuery("b200+").gpus).toEqual(["b200"]);
+    expect(parseQuery("rtx-pro-6000").gpus).toEqual(parseQuery("rtx pro 6000").gpus);
+  });
+  it("terminates on a hyphenated word whose parts mean nothing", () => {
+    expect(() => parseQuery("foo-bar-baz")).toThrow(UnrecognizedQueryError);
+    expect(parseQuery("graviton foo-bar-baz").ignored).toEqual(["foo", "bar", "baz"]);
+  });
+  it("TestIsRecognizedTerm (the rows truffle-ts's vocabulary covers)", () => {
+    const cases: [string, boolean][] = [
+      ["H100", true], ["h100", true], ["A100-80GB", true], ["a100-80gb", true], ["RTX-PRO-6000", true],
+      ["B200+", true], ["h100!", true], ["m7i", false], ["foo-bar", false], ["unknownword", false],
+      ["", false], ["   ", false], ["8", false],
+    ];
+    for (const [w, want] of cases) expect(isRecognizedTerm(w), w).toBe(want);
+  });
+  it("find('A100-80GB') is the 80 GB A100 only (Go #245)", async () => {
+    expect((await find("A100-80GB")).map((r) => r.instance.instanceType)).toEqual(["p4de.24xlarge"]);
+  });
+});

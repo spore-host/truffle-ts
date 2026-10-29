@@ -51,6 +51,7 @@ export type { FindOptions } from "./core/find.js";
 export {
   looksLikePattern,
   looksLikeRegex,
+  isBareFamily,
   patternToRegex,
   wildcardToRegex,
 } from "./core/pattern.js";
@@ -82,7 +83,17 @@ export { describePrice, describePriceOrigin, OFFLINE_REASON } from "./core/price
 export type { PriceSource, PriceOrigin, PriceQuote, StaticPriceTable } from "./core/price.js";
 
 // The find pipeline pieces (for consumers that want control over a step).
-export { parseQuery, sortPreference, qualitativeTokens } from "./core/parser.js";
+export {
+  parseQuery,
+  sortPreference,
+  qualitativeTokens,
+  hasConstraints,
+  isRecognizedTerm,
+  memoryReadingNote,
+  suggestTerms,
+  editDistance,
+  UnrecognizedQueryError,
+} from "./core/parser.js";
 export type { ParsedQuery, Token, TokenType, SortPreference } from "./core/parser.js";
 export {
   resolveInstanceFamilies,

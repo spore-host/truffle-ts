@@ -49,6 +49,13 @@ For consumers that want control over a stage:
   `getEnabledRegions()`, `getSpotPricing(instances, opts)`, `getQuotas(opts)`,
   `canLaunch(instance, quotas, spot?)`. Implemented by `AwsLiveFinder` on the
   [`./live` subpath](catalog.md#live-data-the-live-finder).
+  `AwsLiveFinder` also has `listInstanceTypes`, `searchAZs`, `getZoneInfos`,
+  `getCapacityReservations`, `getCapacityBlocks`, `getCapacityBlockOfferings` and
+  `getObtainability`: the Go `list`, `az`, `capacity`, `capacity-blocks` and
+  `available` commands. The pure parts (duration rounding, sort orders, AZ
+  filters, the obtainability verdict) are exported from `./live` too.
+- **`listInstanceTypes(finder?)`**: every type the finder knows, sorted. Offline
+  by default.
 - **`loadBundledCatalog()`**, **`CATALOG_AS_OF`**, **`CATALOG_REGION`**: the raw
   snapshot, its date and the region its prices are for.
 - **`staticOnDemandPrice(type, region?)`**: a `PriceQuote` (`{ price?, origin }`)
@@ -65,6 +72,28 @@ For consumers that want control over a stage:
   `EC2Pricing` is deprecated and kept as that table's us-east-1 slice.
 - **`lookupApp(nameOrAlias)`**, **`listApps()`**, **`AppCatalog`**: the app
   catalog, generated from libs `catalog.yaml`. `lookupApp("imagej")` is fiji.
+
+## Derivations
+
+Pure functions Go computes inside its printer and commands (#34), so a UI
+reaches the same answer the CLI prints:
+
+- Ranking: **`sortFindResults(results, filters, pref)`** (closest fit first for
+  size queries, Go #187), `fitDistance`, `hasSizeSpec`, `minimumSpecHint`,
+  `limitTypes` / `limitNote` (Go `--limit`). `sortResults(results, pref,
+  filters?)` delegates to it.
+- GPU memory as sold: `nominalGpuMemory`, `nominalGpuMemoryGB`,
+  `formatGpuMemory`, `matchesGpuMemory`, `perGpuMemoryMib`.
+- Families and zones: `isGPUFamily` / `GPU_FAMILY_PREFIXES`, `compareZoneNames`
+  / `sortZoneNames` / `zoneNamesSorted`, `uniqueSorted`, `countUniqueRegions`,
+  `instanceFamilies`, `instanceSizes`.
+- Prices and ratios: `formatPrice` / `priceHeaderFor` (per hour, minute or
+  second), `savingsPercent`, `gpuRatios`, `memPerPhysicalCoreGiB`.
+- Text policies, kept because Go applies them to IDs a UI also shows:
+  `truncateWithEllipsis`, `shortenReservationID`, `hasDistinctTimestamps`.
+
+Query helpers: `isRecognizedTerm`, `hasConstraints`, `memoryReadingNote`,
+`suggestTerms`, `editDistance`, `UnrecognizedQueryError`, `isBareFamily`.
 
 ## Types
 

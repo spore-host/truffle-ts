@@ -53,6 +53,36 @@ version strings agree.
 - App catalog fields `kind`, `minVramGiB`, `aliases` and `license`, plus
   `listApps()` (sorted, as Go `catalog.List`) and `APP_CATALOG_SOURCE` (#30).
 
+- **Go truffle's `available`, `az`, `capacity`, `capacity-blocks` and `list`
+  commands, on the live finder** (#32, #33). `AwsLiveFinder` gains
+  `getObtainability`, `searchAZs`, `getZoneInfos`, `getCapacityReservations`,
+  `getCapacityBlocks`, `getCapacityBlockOfferings` and `listInstanceTypes`. Each
+  is plain EC2/Service Quotas SigV4, so it runs in a browser tab with STS
+  credentials. The pure parts are exported from `./live`: duration rounding,
+  default windows, sort orders, the no-offerings message, the AZ filters and
+  region summaries, the zone classifier and the obtainability verdict.
+  - A failed region is listed in `regionErrors` and never folded into "nothing
+    found". A total failure throws, and "not a Capacity Block type in any
+    region" is its own error (Go #63/#109/#110).
+  - Obtainability reports two cases as unknown where Go reports them as bad: an
+    unreadable quota (Go prints "quota is 0", filed as spore-host/truffle#271)
+    and a failed AZ lookup (Go prints "not offered"). Its quota code comes from
+    the full 8-family table; Go's `available` maps only P, G and Standard.
+  - `RunInstances` with `DryRun` is deliberately not used, as in Go. It checks
+    permissions, not capacity.
+- **The pure derivations Go keeps inside its printer** (#34), exported from the
+  main entry: closest-fit ranking (`sortFindResults`, `fitDistance`,
+  `minimumSpecHint`), GPU memory as sold (`nominalGpuMemory`,
+  `matchesGpuMemory`, `formatGpuMemory`), `limitTypes`, `isGPUFamily`, zone
+  order, `formatPrice` per hour/minute/second, `savingsPercent`, `gpuRatios`,
+  `memPerPhysicalCoreGiB`, `truncateWithEllipsis` and friends. Go's test tables
+  are ported verbatim.
+- `listInstanceTypes(finder?)`, `instanceFamilies`, `instanceSizes` (Go `list`).
+- `isRecognizedTerm`, `hasConstraints`, `memoryReadingNote`, `suggestTerms`,
+  `UnrecognizedQueryError`, `isBareFamily`; `ParsedQuery.gpuMemoryRead`; the
+  `hostMemory` token; `FilterOptions.exactGpuMemory`; `InstanceType.availableAZs`;
+  `QuotaInfo.spotUsage`; `sortSpotResults`.
+
 ### Changed
 
 - **`onDemandPrice()` no longer estimates** (#29). It was
@@ -86,6 +116,25 @@ version strings agree.
   toolchain is capped at 5.x until that happens, so CI stops being red on an
   upgrade nobody scheduled.
 
+- **`find` ranks size queries closest fit first** (Go #187). `16 cores 64gb` used
+  to open with the newest generation. It now leads with the type nearest the
+  request, ties going cheapest first. Rows of a type stay together, cheapest
+  region first. With no size terms, the order is still newest generation first,
+  now with price as the next key. `sortResults` takes the query's filters as an
+  optional third argument. An estimate still never beats a real price (#39).
+- **A bare size in a GPU query is per-GPU memory, named card included** (Go #236).
+  `a100 80gb` is the 80 GB part (p4de) and no longer p4d's 40 GB A100s, which
+  used to match on their 1152 GiB of host RAM. `ram`, `memory`, `mem`,
+  `host memory` and `host ram` after a size mark host memory, and `gpu memory`
+  and `per gpu` mark per-GPU memory.
+- **Per-GPU memory is compared as the GPU is sold** (Go #236/#244), so `gpu 24gb`
+  keeps the 22888 MiB A10G and L4. The match reason reads `GPU memory: 24 GB >= 24`
+  instead of `24 GiB/GPU >= 24 GiB`.
+- **Exact types and bare families take the pattern path** (Go #263), ending the
+  deliberate divergence of 0.2.0. Go has checked vocabulary first since v0.51,
+  so `a100` still means the GPU while `r8g.2xlarge` means that type and `g5`
+  means every g5 size.
+
 ### Deprecated
 
 - `EC2Pricing` is now the us-east-1 slice of `STATIC_EC2_PRICES`, kept so
@@ -100,6 +149,17 @@ version strings agree.
   replacement, by design: a price we don't have is reported as absent.
 
 ### Fixed
+- **`find("r8g.2xlarge")`, `find("trn1.32xlarge")`, `find("zzqx")` and
+  `find("A100-80GB")` each returned all 231 bundled types.** All four parsed as
+  unknown words, which constrain nothing. An exact type now matches itself. A
+  query of only unknown words throws `UnrecognizedQueryError`, naming the words
+  and suggesting the closest known one (Go #229). A hyphenated or suffixed GPU
+  spec string (`a100-80gb`, `h100!`, `b200+`, `rtx-pro-6000`) is read like its
+  spaced form (Go #130), so `A100-80GB` is p4de.
+- **Spot quota checks counted On-Demand usage** (Go #132). Usage is now split
+  by `InstanceLifecycle`, and `canLaunch(..., spot = true)` subtracts Spot
+  usage. An account with a full Spot quota was told a launch would fit, and
+  On-Demand headroom was understated by every running Spot instance.
 - **The live Price List lookup could report a free H100** (#42, on the live
   path). gen-catalog was fixed, but the runtime `fetchOnDemandPrice` still sent
   `MaxResults: 1` with no `marketoption` filter and read only the first item.

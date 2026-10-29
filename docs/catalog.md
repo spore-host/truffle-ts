@@ -210,6 +210,81 @@ if (!verdict.canLaunch) console.log(verdict.reason);    // names the family + he
 - If the *usage* read fails, every family is marked `incomplete`: 0 used
   overstates headroom, so it must not present as a clean slate.
 
+- Usage is split by lifecycle, as in Go #132: `usage` is On-Demand vCPUs and
+  `spotUsage` is Spot vCPUs, read from each instance's `InstanceLifecycle`. A
+  Spot check is made against Spot usage. Before, an account whose Spot quota was
+  already full was told a launch would fit.
+
+### Obtainability (`truffle available`)
+
+`getObtainability(type, region?)` answers "can I actually get this right now?"
+(#32, Go `Obtainability`). It collects five signals at once, and each one is
+best-effort:
+
+| signal | from |
+|---|---|
+| `spotPlacements` (1-10 per AZ, best first) | `GetSpotPlacementScores`, with `SingleAvailabilityZone`, `RegionNames`, `TargetCapacity: 1`, `TargetCapacityUnitType: "units"` |
+| `offeredAZs` / `totalAZs` | `DescribeInstanceTypeOfferings` + `DescribeAvailabilityZones` |
+| `onDemandQuotaHeadroom`, `quotaCode` | `GetServiceQuota` + `DescribeInstances` |
+| `vcpusPerInstance` | `DescribeInstanceTypes` (not parsed from the name) |
+| `capacityBlockOfferings` (24h, count 1) | `DescribeCapacityBlockOfferings` |
+
+The on-demand price is attached with its `onDemandPriceOrigin`.
+`obtainabilityVerdict(o)` gives Go's concerns (`spot`, `azs`, `quota`) and the
+one-line summary.
+
+A signal that fails becomes a line in `warnings` and is left undefined. Only an
+empty type or region throws. `GetSpotPlacementScores` is commonly denied by SCP,
+and a denied call must never read as "capacity looks fine". Two signals go
+further than Go and report an unknown as unknown:
+
+- A quota that can't be read is a warning, not "headroom 0". Go's `available`
+  reports it as "quota is 0" (spore-host/truffle#271).
+- A failed AZ lookup leaves `offeredAZs` undefined, not empty, so it doesn't
+  read as "not offered in this region".
+
+`RunInstances` with `DryRun` is deliberately not used. It checks permissions,
+not capacity or quota, and says "would have succeeded" for types that can't be
+launched.
+
+### Availability zones (`truffle az`)
+
+`searchAZs(matcher, filters, { azs?, minAZCount?, localZonesOnly? })` is the
+AZ-first view. Each row gets `availableAZs` from one batched
+`DescribeInstanceTypeOfferings` per region, and rows are ordered most AZs first.
+`azs` rewrites each row down to the matched AZs and also chooses the regions, as
+Go's `--az` does. `localZones` lists the Local and Wavelength zones seen, which
+come from `DescribeAvailabilityZones` with `AllAvailabilityZones: true`.
+`summarizeAZRegions()` is `--regions-only`, `summarizeAZs()` the summary block.
+Set `includeAZs: true` on the finder to fill `availableAZs` on every `search`.
+AZ lists are always in zone order: standard AZs, then edge zones.
+
+### Capacity (`truffle capacity`, `capacity --blocks`, `capacity-blocks`)
+
+- `getCapacityReservations(opts)`: On-Demand Capacity Reservations, most
+  available first. `onlyActive`, `onlyAvailable`, `minCapacity`,
+  `includeExpired`. `summarizeCapacity()` gives utilization.
+- `getCapacityBlocks(opts)`: Capacity Blocks for ML you already own, soonest
+  first.
+- `getCapacityBlockOfferings({ instanceType, durationHours, instanceCount?,
+  startDate?, startAfter?, endBy?, sort? })`: purchasable offerings, cheapest
+  first. The duration is rounded **up** to a valid one (1-day steps to 14 days,
+  then 7-day steps to 182), and `durationRoundedFrom` says when it was. The
+  window defaults to now through duration + 1 day.
+  `noOfferingsMessage()` names the instance count first, because a count above 1
+  silently gates offerings (#109).
+
+All three are multi-region and return `{ results, regionErrors }`. A failed
+region is listed; it's never folded into "nothing found". If every region fails
+they throw. When every region answers that the type isn't a Capacity Block type,
+the error says so instead (#110).
+
+### Listing types (`truffle list`)
+
+`listInstanceTypes(finder?)` lists the bundled catalog offline, and
+`AwsLiveFinder.listInstanceTypes(region?)` lists one live region. Both are
+sorted. `instanceFamilies()` and `instanceSizes()` are `--family` and `--sizes`.
+
 ### Running the live finder in a browser
 
 No proxy is needed, and the earlier claim that one was is wrong on both of its

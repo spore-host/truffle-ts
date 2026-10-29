@@ -79,8 +79,10 @@ reach it.
 **Offline find + an opt-in live AWS finder.** Natural-language search over the
 bundled catalog works fully offline and is the default. `@spore-host/truffle-ts/live`
 adds live `DescribeInstanceTypes` search, on-demand pricing, spot prices (per AZ,
-with savings and trend), and vCPU quota checks — usable from Node, a server, or a
-browser tab holding STS credentials. The `spawn-ts` instance-picker integration and
+with savings and trend), and vCPU quota checks. It also ports Go truffle's `list`,
+`az`, `capacity`, `capacity-blocks` and `available` commands. It works from Node,
+a server, or a browser tab holding STS credentials. Every price says where it came
+from: live, or static with the reason and the date the static data was collected. The `spawn-ts` instance-picker integration and
 the remaining Go commands are tracked in
 [#36](https://github.com/spore-host/truffle-ts/issues/36).
 

@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { loadBundledCatalog } from "./catalog.js";
-import { onDemandPrice, estimatePriceByFamily, EC2Pricing } from "./pricing.js";
 import { GPUDatabase } from "../metadata/index.js";
 import { extractFamily } from "../core/filter.js";
 
@@ -105,55 +104,5 @@ describe("bundled catalog integrity", () => {
       .filter((it) => it.onDemandPrice! / it.gpus! < 0.05)
       .map((it) => `${it.instanceType}=$${it.onDemandPrice}/${it.gpus}gpu`);
     expect(absurd, "a GPU-hour under 5c is a fabricated price, not a bargain").toEqual([]);
-  });
-});
-
-describe("pricing", () => {
-  it("uses the exact table when present", () => {
-    expect(onDemandPrice("m7i.large")).toBe(EC2Pricing["m7i.large"]);
-    // 55.04, corrected from 98.32 against the live Price List API (2026-08-01).
-    expect(onDemandPrice("p5.48xlarge")).toBe(55.04);
-  });
-
-  it("estimates by family × size when not in the table", () => {
-    // c7i base (large) 0.0893 × 8 (4xlarge) — c7i.4xlarge IS in table, so pick an
-    // untabled size to exercise the estimator.
-    expect(estimatePriceByFamily("c7i.8xlarge")).toBeCloseTo(0.0893 * 16, 4);
-    // Unknown CPU family → 0.10 base. Being wrong here costs cents.
-    expect(estimatePriceByFamily("zzz.large")).toBeCloseTo(0.1, 4);
-    // Malformed → 0.10.
-    expect(estimatePriceByFamily("nodot")).toBe(0.1);
-  });
-
-  it("refuses to estimate an accelerator family it has no base price for", () => {
-    // The mechanism behind #39. The family × size heuristic is fine for a CPU box,
-    // where price tracks size within a generation, and worthless for a GPU box,
-    // where the accelerator dominates and the multiplier knows nothing about it.
-    // Returning undefined makes "we don't know" expressible; the old $0.20 was
-    // indistinguishable in form from a real price.
-    expect(estimatePriceByFamily("p6e-gb200.36xlarge")).toBeUndefined();
-    expect(estimatePriceByFamily("p9.99xlarge")).toBeUndefined(); // a future family
-    expect(onDemandPrice("p6e-gb200.36xlarge")).toBeUndefined();
-    // Families WITH a real base price still estimate.
-    expect(estimatePriceByFamily("g5.16xlarge")).toBeCloseTo(0.503 * 32, 4);
-    // And a table hit always wins, accelerator or not.
-    expect(onDemandPrice("p5.4xlarge")).toBe(6.88);
-  });
-
-  it("agrees with the bundled catalog wherever both have a price", () => {
-    // Two static tables in one package WILL drift — this is #39's third defect,
-    // where p4d/p5 disagreed by 1.5-1.8x and the answer to "what does a
-    // p5.48xlarge cost" depended on whether you called find() or onDemandPrice().
-    const byType = new Map(catalog.map((it) => [it.instanceType, it]));
-    const off: string[] = [];
-    for (const [type, tablePrice] of Object.entries(EC2Pricing)) {
-      const entry = byType.get(type);
-      if (!entry?.onDemandPrice) continue;
-      const ratio = entry.onDemandPrice / tablePrice;
-      if (ratio < 0.9 || ratio > 1.1) {
-        off.push(`${type}: catalog=${entry.onDemandPrice} table=${tablePrice} (${ratio.toFixed(2)}x)`);
-      }
-    }
-    expect(off, "pricing.ts and instances.json disagree — pick one source of truth").toEqual([]);
   });
 });

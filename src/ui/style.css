@@ -74,3 +74,4 @@ td.reasons span {
   border-radius: 10px; padding: 1px 8px; margin: 0 4px 4px 0; font-size: 11px;
 }
 .empty { color: var(--muted); padding: 24px 0; }
+.price-note { color: #888; font-size: 0.85em; margin-top: 0.5em; }

@@ -44,22 +44,60 @@ inf/trn) plus representative graviton, Intel, and AMD CPU families across sizes.
 
 ## Pricing
 
-`src/data/pricing.ts` is a port of `spore-host/libs/pricing`:
+A price is either real or absent. truffle-ts doesn't estimate prices (#29). Go
+truffle removed its family × size estimator after truffle#114, where it priced
+`hpc7a.96xlarge` at $0.20/hr against a real $7.20. truffle-ts's
+`estimatePriceByFamily` returned the same $0.20, so it's gone too.
 
-- `EC2Pricing` — an exact us-east-1 on-demand `$/hr` table for common types.
-- `estimatePriceByFamily(type)` — a fallback: the family's "large" base price ×
-  a size multiplier, for anything not in the table. Returns **`undefined`** for an
-  accelerator family with no base price, instead of guessing: the heuristic works
-  for CPU boxes, where price tracks size, and fails catastrophically on GPUs, where
-  the accelerator dominates and the multiplier knows nothing about it. It once
-  reported **$0.20/hr for a 72xB200 rack** that really costs ~$100/hr.
-- `onDemandPrice(type)` — the exact table if present, else the estimate. May be
-  `undefined`; render that as unknown, never as `0`.
+`staticOnDemandPrice(type, region = "us-east-1")` looks up an exact
+(region, instance type) pair in two static tables. Both hold real Price List
+rates, collected on a known date:
 
-Both static sources — `EC2Pricing` and the bundled catalog — are asserted to agree
-within 10% wherever they overlap. Two static price tables in one package drift,
-and when they did, the answer to "what does a `p5.48xlarge` cost" depended on
-whether you called `find()` or `onDemandPrice()`.
+| table | regions | collected | source |
+|---|---|---|---|
+| `STATIC_EC2_PRICES` | 8 | `STATIC_PRICES_AS_OF` (2026-10-07) | generated from `spore-host/libs` `pricing.EC2Pricing`, the table Go truffle falls back to |
+| the bundled catalog | us-east-1 only | `CATALOG_AS_OF` (2026-07) | `scripts/gen-catalog.mjs` |
+
+The result is a `PriceQuote`: `{ price?, origin }`. On a miss, `price` is
+`undefined` and `origin` is `{ source: "unknown", reason }`. The reason says
+what was missing, for example `no static price table for region sa-east-1`.
+
+Every static price says that it's static, why the live Price List wasn't used,
+and when the static data was collected (truffle#184). `origin` carries all three
+(`source: "static"`, `reason`, `collectedOn`), and `describePrice(quote)` renders
+them in one fixed form, so the wording can't drift between consumers:
+
+```
+$0.0832/hr on-demand (static, collected 2026-10-07 (live Price List not consulted (offline lookup)))
+```
+
+Bundled-catalog entries carry the same `priceOrigin`. The demo prints it under
+the results table.
+
+`onDemandPrice(type, region?)` is `staticOnDemandPrice(...).price`, kept for
+existing callers. It returns `undefined` more often than before, because it no
+longer guesses. Render `undefined` as unknown, never as `0`.
+
+The two static tables are asserted to agree within 10% wherever both have a type.
+Two price tables in one package drift (#39). The one disagreement found when the
+libs table was adopted was `p4d.24xlarge`: libs has 32.77, while the live rate is
+21.9576. That libs entry is stale (spore-host/libs#67), so the generator drops it
+(`KNOWN_STALE` in `scripts/gen-upstream.mjs`) and the lookup falls through to the
+catalog's live-pulled rate.
+
+### Regenerating the libs-derived data (`gen-upstream`)
+
+`src/data/static-prices.generated.ts` and `src/metadata/apps.generated.ts` are
+generated from a libs checkout or module-cache directory:
+
+```bash
+npm run gen:upstream -- --libs "$(go env GOMODCACHE)/github.com/spore-host/libs@v0.51.2"
+```
+
+To check the committed files are current, set `TRUFFLE_LIBS_DIR` to the same
+directory and run `npm test`. That runs the drift test in
+`src/data/pricing.test.ts`; without the variable the test is skipped, since CI
+has no Go module cache.
 
 Live pricing (the AWS Price List **Query** API) needs IAM credentials + SigV4, so
 it belongs behind a live `Finder` rather than in the default offline path — but it
@@ -116,8 +154,14 @@ const results = await find("cheapest graviton 8 cores 32gb", { finder });
   change; `BundledFinder` stays the **default** and offline.
 - `search` runs `DescribeInstanceTypes` per region, maps to `InstanceType` (same
   shape as the snapshot), and filters in-memory with the same `matchesFilters`.
-- Pricing is `"off"` by default (fast, no `pricing:GetProducts` needed); pass
-  `pricing: "lazy"` to fetch real on-demand $/hr for the result set.
+  It returns **one row per (type, region)**, and each row carries its `region`,
+  as Go's results do (#31). A type offered in two regions is two rows.
+- Pricing is `"off"` by default (fast, no `pricing:GetProducts` needed). Pass
+  `pricing: "lazy"` to price the result set, each row in its own region: live
+  from the Price List, else the static table with the live failure as its
+  `priceOrigin.reason`, as Go's fallback pricer does. The live lookup filters on
+  `marketoption=OnDemand` and skips `$0.00` rows, so a CapacityBlock row can't
+  report a free H100 (#42).
 - The AWS SDK is an **optional dependency** reached only through the `./live`
   subpath, so the default `.` import never pulls it into a browser bundle.
 

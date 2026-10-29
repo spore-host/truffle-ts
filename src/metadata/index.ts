@@ -35,5 +35,5 @@ export {
 
 export { SizeCategories, getSizesForCategory } from "./sizes.js";
 
-export { AppCatalog, lookupApp } from "./apps.js";
-export type { AppEntry } from "./apps.js";
+export { AppCatalog, lookupApp, listApps, APP_CATALOG_SOURCE } from "./apps.js";
+export type { AppEntry, AppKind } from "./apps.js";

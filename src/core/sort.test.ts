@@ -107,3 +107,20 @@ describe("sortResults", () => {
     });
   });
 });
+
+describe("sortResults region tiebreak (#31)", () => {
+  const row = (instanceType: string, region: string): InstanceType => ({
+    instanceType,
+    instanceFamily: instanceType.split(".")[0],
+    vcpus: 2,
+    memoryMib: 8192,
+    architecture: "x86_64",
+    region,
+  });
+  it("orders rows of one type by region, as Go's final tiebreak", () => {
+    const input = [row("m7i.large", "us-west-2"), row("m7i.large", "eu-west-1"), row("m7i.large", "us-east-1")];
+    for (const pref of ["default", "cheapest", "performant"] as const) {
+      expect(sortResults(input, pref).map((r) => r.region)).toEqual(["eu-west-1", "us-east-1", "us-west-2"]);
+    }
+  });
+});

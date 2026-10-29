@@ -18,7 +18,61 @@ version strings agree.
 
 ## [Unreleased]
 
+### Added
+
+- **Price provenance on every price** (#29, truffle#184). The new
+  `staticOnDemandPrice(type, region?)` returns a `PriceQuote`: `{ price?, origin }`,
+  where `origin` is `{ source: "live" | "static" | "unknown", table?,
+  collectedOn?, reason? }`. A static price always has a `reason` (why the live
+  Price List wasn't used) and a `collectedOn` date. `describePrice()` and
+  `describePriceOrigin()` render that in one fixed form, so every consumer uses
+  the same words. `InstanceType.priceOrigin` carries it on results:
+  bundled-catalog entries are labelled static (collected `CATALOG_AS_OF`), and
+  live rows say whether they were priced live or fell back. Before this, a static
+  2026-01 estimate couldn't be told apart from a live price, so the staleness
+  warning Go prints for a static price couldn't be represented. The demo prints
+  the label under its results table.
+- **Region-keyed static prices from libs** (#29). `STATIC_EC2_PRICES` (8 regions,
+  528 rates), `STATIC_PRICES_AS_OF` (2026-10-07) and `STATIC_PRICES_SOURCE` are
+  generated from `spore-host/libs` v0.51.2 `pricing.EC2Pricing`, the table Go
+  truffle falls back to. A eu-west-1 lookup now gets eu-west-1's rate. The old
+  flat table gave every region us-east-1's price.
+- **`InstanceType.region`** (#31). The live finder sets it on every row.
+- **`scripts/gen-upstream.mjs`** (`npm run gen:upstream -- --libs <dir>`)
+  generates the app catalog and the static price table from a libs directory,
+  and `--check` reports drift. Set `TRUFFLE_LIBS_DIR` and `npm test` runs the
+  same check. `p4d.24xlarge` (us-east-1) is excluded as known-stale: libs has
+  32.77, the live rate is 21.9576 (spore-host/libs#67).
+- Live pricing helpers on `./live`: `lookupOnDemandPrice` (live, then static,
+  keeping the live failure as the static price's reason, as Go's
+  `fallbackPricer` does), `lookupOnDemandPrices` (each distinct (type, region)
+  once, at most `PRICE_LOOKUP_CONCURRENCY` = 4 in flight, as Go
+  `Client.OnDemandPrices`), `onDemandFilters`, `priceKey`.
+  `SpotPriceResult.onDemandPriceOrigin` labels a savings basis that came from
+  the static table.
+- App catalog fields `kind`, `minVramGiB`, `aliases` and `license`, plus
+  `listApps()` (sorted, as Go `catalog.List`) and `APP_CATALOG_SOURCE` (#30).
+
 ### Changed
+
+- **`onDemandPrice()` no longer estimates** (#29). It was
+  `EC2Pricing[type] ?? estimatePriceByFamily(type)`, so it never missed. An
+  unknown CPU family got $0.10 × a size multiplier: `hpc7a.96xlarge` came back
+  as **$0.20/hr against a real $7.20**, 36× low. That's the same number Go
+  truffle#114 removed its estimator over. It now does an exact lookup and returns
+  `undefined` on a miss. It also takes an optional `region` (default
+  us-east-1). The signature is unchanged, but it returns `undefined` more often.
+  Breaking in behaviour, so it ships in a MINOR release.
+- **The app catalog is generated from libs `catalog/catalog.yaml`**, not hand
+  copied (#30). It now has all ten upstream apps, so `jupyter`, `vscode`,
+  `desktop`, `openrefine` and their aliases are app words, as in Go.
+- **The live finder returns one row per (type, region)** (#31). It deduped on
+  the instance type alone, so `regions: ["us-east-1", "eu-west-1"]` returned a
+  type offered in both as **one** row, with no way to tell which region it was
+  from. Go appends every region's rows and dedupes on `{instanceType, region}`.
+  `sortResults` now breaks ties on region after instance type, as Go does.
+  Callers that relied on one row per type should dedupe themselves.
+
 
 - **vitest 5** (from 4.1): `vitest` and `@vitest/coverage-v8` moved together
   to ^5.0.5. Dependabot had proposed them as separate PRs (#71, #72), and each failed
@@ -32,7 +86,35 @@ version strings agree.
   toolchain is capped at 5.x until that happens, so CI stops being red on an
   upgrade nobody scheduled.
 
+### Deprecated
+
+- `EC2Pricing` is now the us-east-1 slice of `STATIC_EC2_PRICES`, kept so
+  existing imports compile. Its contents changed: it's the libs table, which has
+  more CPU types and fewer GPU types than the old hand table. GPU prices that
+  were only in the old table are still found through the bundled catalog.
+
+### Removed
+
+- **`estimatePriceByFamily()`** (#29). It made up a price for any type it didn't
+  know. Go removed the same function from libs (libs#29). There's no
+  replacement, by design: a price we don't have is reported as absent.
+
 ### Fixed
+- **The live Price List lookup could report a free H100** (#42, on the live
+  path). gen-catalog was fixed, but the runtime `fetchOnDemandPrice` still sent
+  `MaxResults: 1` with no `marketoption` filter and read only the first item.
+  For `p5.4xlarge`, that item can be the CapacityBlock row at $0.00. Ported from
+  Go: it filters on `marketoption=OnDemand`, reads every item, and
+  `parseOnDemandUsd` skips non-positive rates, as `parseOnDemandFromPriceItem`
+  does.
+- **Lazy live pricing priced every row against the first region** (#31). Each
+  row is now priced in its own region. A failed lookup falls back to the static
+  table, labelled with why, instead of leaving the price silently unset. A row
+  neither source can price gets a `priceOrigin` that says why.
+- **`find("imagej")`, `find("pv")` and `find("chimera")` resolve** (#30). The
+  hand-copied catalog had dropped every alias. Every description now matches
+  upstream, chimerax has its `g6e` high-VRAM family back, and `min_vram_gib` and
+  `license` are carried.
 - **A pin's version comment can no longer silently misstate what CI runs.**
   `src/ci-hygiene.test.ts` required only that *some* `# vN` comment be present,
   never that it was true. A wrong label is worse than a missing one: it makes a

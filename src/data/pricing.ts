@@ -1,122 +1,110 @@
-// Static on-demand pricing — a seed of the Go dep spore-host/libs/pricing
-// (ec2.go). Prices are approximate us-east-1 On-Demand rates "as of 2026-01",
-// NOT live. The exact-match table covers common types; estimatePriceByFamily is
-// the fallback heuristic (family "large" base price × size multiplier) for
-// anything not listed — the same model the Go tool ships as its offline pricer.
+// Static on-demand pricing, with provenance.
 //
-// Live pricing (the authenticated AWS Price List Query API) is not browser-
-// feasible; it belongs behind the Finder seam. This is the offline default.
-
-/** Approximate us-east-1 on-demand $/hr, "as of 2026-01". */
-export const EC2Pricing: Record<string, number> = {
-  // General purpose
-  "t3.micro": 0.0104, "t3.small": 0.0208, "t3.medium": 0.0416, "t3.large": 0.0832, "t3.xlarge": 0.1664, "t3.2xlarge": 0.3328,
-  "t4g.micro": 0.0084, "t4g.small": 0.0168, "t4g.medium": 0.0336, "t4g.large": 0.0672, "t4g.xlarge": 0.1344, "t4g.2xlarge": 0.2688,
-  "m5.large": 0.096, "m5.xlarge": 0.192, "m5.2xlarge": 0.384, "m5.4xlarge": 0.768,
-  "m6i.large": 0.096, "m6i.xlarge": 0.192, "m6i.2xlarge": 0.384, "m6i.4xlarge": 0.768,
-  "m7i.large": 0.1008, "m7i.xlarge": 0.2016, "m7i.2xlarge": 0.4032, "m7i.4xlarge": 0.8064,
-  "m7g.large": 0.0816, "m7g.xlarge": 0.1632, "m7g.2xlarge": 0.3264, "m7g.4xlarge": 0.6528,
-  "m7a.large": 0.11592, "m7a.xlarge": 0.23184, "m7a.2xlarge": 0.46368,
-  // Compute optimized
-  "c5.large": 0.085, "c5.xlarge": 0.17, "c5.2xlarge": 0.34, "c5.4xlarge": 0.68,
-  "c6i.large": 0.085, "c6i.xlarge": 0.17, "c6i.2xlarge": 0.34, "c6i.4xlarge": 0.68,
-  "c7i.large": 0.0893, "c7i.xlarge": 0.1785, "c7i.2xlarge": 0.357, "c7i.4xlarge": 0.714,
-  "c7g.large": 0.0725, "c7g.xlarge": 0.145, "c7g.2xlarge": 0.29, "c7g.4xlarge": 0.58,
-  "c6a.large": 0.0765, "c6a.xlarge": 0.153, "c6a.2xlarge": 0.306, "c6a.4xlarge": 0.612,
-  // Memory optimized
-  "r5.large": 0.126, "r5.xlarge": 0.252, "r5.2xlarge": 0.504,
-  "r6i.large": 0.126, "r6i.xlarge": 0.252, "r6i.2xlarge": 0.504,
-  "r7g.large": 0.10584, "r7g.xlarge": 0.21168, "r7g.2xlarge": 0.42336,
-  "r8g.large": 0.11844, "r8g.xlarge": 0.23688, "r8g.2xlarge": 0.47376,
-  // GPU / accelerated
-  "g4dn.xlarge": 0.526, "g4dn.2xlarge": 0.752, "g4dn.12xlarge": 3.912,
-  "g5.xlarge": 1.006, "g5.2xlarge": 1.212, "g5.12xlarge": 5.672, "g5.48xlarge": 16.288,
-  "g6.xlarge": 0.8048, "g6.12xlarge": 4.6016,
-  "g6e.xlarge": 1.861,
-  "p3.2xlarge": 3.06, "p3.8xlarge": 12.24, "p3.16xlarge": 24.48,
-  // p4d/p5 corrected against the live Price List API (2026-08-01). The prior
-  // values (32.7726 / 98.32) disagreed with instances.json by 1.5–1.8×, and the
-  // live pull settled it in the catalog's favour: two static tables in one
-  // package had drifted, so "what does a p5.48xlarge cost" depended on whether
-  // you called find() or onDemandPrice(). catalog.test.ts now asserts they agree.
-  "p4d.24xlarge": 21.9576,
-  "p5.48xlarge": 55.04,
-  "p5.4xlarge": 6.88,
-  "g3s.xlarge": 0.75, "g3.4xlarge": 1.14, "g3.8xlarge": 2.28, "g3.16xlarge": 4.56,
-  "p2.xlarge": 0.9, "p2.8xlarge": 7.2, "p2.16xlarge": 14.4,
-  // AWS accelerators
-  "inf2.xlarge": 0.7582, "inf2.48xlarge": 12.98,
-  "trn1.2xlarge": 1.3438, "trn1.32xlarge": 21.5,
-};
-
-// Family "large" (2 vCPU) base $/hr, ported from libs/pricing estimatePriceByFamily.
+// Two static sources, both real Price List rates collected on a known date:
 //
-// g3/g3s/p2 added from a real Price List pull (2026-08-01) — the estimator's
-// $0.10 default had been guessing them at 3.5–4.5× under. p2.16xlarge is the worst
-// case: guessed $3.20, real $14.40.
-const basePriceLarge: Record<string, number> = {
-  t2: 0.0928, t3: 0.0832, t3a: 0.0752, t4g: 0.0672,
-  m5: 0.096, m5a: 0.086, m5n: 0.119, m6i: 0.096, m6a: 0.086, m7i: 0.1008,
-  c5: 0.085, c5a: 0.077, c5n: 0.108, c6i: 0.085, c6a: 0.077, c7i: 0.0893,
-  r5: 0.126, r5a: 0.113, r6i: 0.126,
-  g3: 0.285, g3s: 0.375, g4dn: 0.263, g5: 0.503, p2: 0.45, p3: 0.765, p4d: 0.6827,
-};
+//   1. STATIC_EC2_PRICES — generated from the Go suite's spore-host/libs
+//      pricing.EC2Pricing (8 regions, collected STATIC_PRICES_AS_OF). This is
+//      the table Go truffle falls back to when the Price List API is unavailable.
+//   2. The bundled catalog (instances.json) — us-east-1 only, collected
+//      CATALOG_AS_OF by scripts/gen-catalog.mjs.
+//
+// Lookup is by EXACT (region, instance type). There is no estimate. Go truffle
+// removed its family × size estimator after truffle#114, where it priced
+// hpc7a.96xlarge at $0.20/hr against a real $7.20; truffle-ts's
+// estimatePriceByFamily returned the same $0.20 for it (#29). A price we don't
+// have is reported as absent, never as a plausible-looking number.
+//
+// Every static price carries an origin that says (1) that it is static, (2) why
+// the live Price List was not used, and (3) when the static data was collected
+// (the owner's rule, truffle#184). Use describePrice() to render one, so the
+// wording is the same everywhere.
+
+import { loadBundledCatalog, CATALOG_AS_OF, CATALOG_REGION } from "./catalog.js";
+import {
+  STATIC_EC2_PRICES,
+  STATIC_PRICES_AS_OF,
+  STATIC_PRICES_SOURCE,
+} from "./static-prices.generated.js";
+
+import { OFFLINE_REASON, type PriceQuote } from "../core/price.js";
+
+export { STATIC_EC2_PRICES, STATIC_PRICES_AS_OF, STATIC_PRICES_SOURCE };
 
 /**
- * Accelerator families the estimator must NOT guess for.
- *
- * The family × size heuristic works for CPU boxes, where price tracks size
- * roughly linearly within a generation. It fails catastrophically on
- * accelerators, because the GPU dominates the price and the size multiplier knows
- * nothing about it. Unlisted family → $0.10 base × 2.0 → **$0.20/hr for a 72×B200
- * rack** that really costs around $100/hr (#39). That number then won every
- * `cheapest` ranking, presenting the most expensive machine in the catalog as the
- * budget option.
- *
- * A wrong price on an accelerator is also the most expensive kind to be wrong
- * about, since these are the instances where an hour's mistake costs real money.
- * So for these families with no entry in `basePriceLarge`, we return "unknown"
- * instead of a plausible-looking fiction. A missing price is a state every
- * consumer already handles; a fabricated one is indistinguishable from a real one.
+ * @deprecated Use `STATIC_EC2_PRICES` (region-keyed) or `staticOnDemandPrice`.
+ * The us-east-1 slice of the libs table, kept so existing imports compile. It
+ * was a hand-kept flat table until #29; it is now the generated libs copy.
  */
-const ACCELERATOR_FAMILY = /^(g|p|inf|trn|dl|vt|f)[0-9]/;
+export const EC2Pricing: Readonly<Record<string, number>> = STATIC_EC2_PRICES["us-east-1"] ?? {};
 
-// Size multiplier relative to "large" = 1.0, ported from libs/pricing.
-const sizeMultiplier: Record<string, number> = {
-  nano: 0.0625, micro: 0.125, small: 0.25, medium: 0.5, large: 1.0,
-  xlarge: 2.0, "2xlarge": 4.0, "4xlarge": 8.0, "8xlarge": 16.0,
-  "12xlarge": 24.0, "16xlarge": 32.0, "24xlarge": 48.0, "48xlarge": 96.0, metal: 48.0,
-};
-
-/**
- * Rough on-demand $/hr for an instance type not in the exact table: the family's
- * "large" base price × a size multiplier. Ports Go estimatePriceByFamily.
- *
- * Returns **`undefined`** for an accelerator family we have no base price for,
- * rather than guessing — see `ACCELERATOR_FAMILY`. Unknown CPU families still get
- * the $0.10 × 2.0 fallback, where being wrong costs cents rather than $100/hr.
- */
-export function estimatePriceByFamily(instanceType: string): number | undefined {
-  const parts = instanceType.split(".");
-  if (parts.length < 2) return 0.1;
-  const [family, size] = parts;
-  const base = basePriceLarge[family];
-  if (base === undefined) {
-    // No basis for this family. On an accelerator, say so.
-    if (ACCELERATOR_FAMILY.test(family)) return undefined;
-    return 0.1 * (sizeMultiplier[size] ?? 2.0);
-  }
-  return base * (sizeMultiplier[size] ?? 2.0);
+let catalogPrices: Map<string, number> | undefined;
+function bundledCatalogPrice(instanceType: string): number | undefined {
+  catalogPrices ??= new Map(
+    loadBundledCatalog()
+      .filter((it) => it.onDemandPrice != null && it.onDemandPrice > 0 && it.estimatedPrice !== true)
+      .map((it) => [it.instanceType, it.onDemandPrice!]),
+  );
+  return catalogPrices.get(instanceType);
 }
 
 /**
- * On-demand $/hr — the exact table if present, else the family estimate.
+ * The static on-demand price for an exact (instance type, region), with its
+ * origin. Never estimates: a miss is `{ price: undefined, origin.source:
+ * "unknown" }` with a reason naming what was missing.
+ *
+ * Tries the libs table first (newer, 8 regions), then the bundled catalog,
+ * which only knows `CATALOG_REGION` (us-east-1). `reason` is recorded as the
+ * static price's reason — pass the live error when this is a fallback.
+ */
+export function staticOnDemandPrice(
+  instanceType: string,
+  region = "us-east-1",
+  reason: string = OFFLINE_REASON,
+): PriceQuote {
+  const type = instanceType.trim().toLowerCase();
+  const reg = region.trim().toLowerCase();
+
+  const libs = STATIC_EC2_PRICES[reg]?.[type];
+  if (libs !== undefined && libs > 0) {
+    return {
+      instanceType,
+      region,
+      price: libs,
+      origin: { source: "static", table: "libs", collectedOn: STATIC_PRICES_AS_OF, reason },
+    };
+  }
+  if (reg === CATALOG_REGION) {
+    const cat = bundledCatalogPrice(type);
+    if (cat !== undefined) {
+      return {
+        instanceType,
+        region,
+        price: cat,
+        origin: { source: "static", table: "bundled-catalog", collectedOn: CATALOG_AS_OF, reason },
+      };
+    }
+  }
+
+  const why =
+    STATIC_EC2_PRICES[reg] === undefined && reg !== CATALOG_REGION
+      ? `no static price table for region ${region}`
+      : `no static price for ${instanceType} in ${region}`;
+  return {
+    instanceType,
+    region,
+    origin: { source: "unknown", reason: reason === OFFLINE_REASON ? why : `${reason}; ${why}` },
+  };
+}
+
+/**
+ * On-demand $/hr from the static tables — `staticOnDemandPrice(...).price`.
  *
  * `undefined` means "no price available", which callers must render as unknown
- * (the portal shows `—`). It is deliberately not 0: zero is a claim, and it sorts
- * first in a cheapest ranking, so a missing price expressed as 0 recommends the
- * instance it knows least about (#42).
+ * (the portal shows `—`), never as 0. It no longer estimates (#29): before,
+ * `onDemandPrice("hpc7a.96xlarge")` was $0.20/hr against a real $7.20. Use
+ * `staticOnDemandPrice` when you show the number: it carries the origin a
+ * static price must be labelled with.
  */
-export function onDemandPrice(instanceType: string): number | undefined {
-  return EC2Pricing[instanceType] ?? estimatePriceByFamily(instanceType);
+export function onDemandPrice(instanceType: string, region = "us-east-1"): number | undefined {
+  return staticOnDemandPrice(instanceType, region).price;
 }

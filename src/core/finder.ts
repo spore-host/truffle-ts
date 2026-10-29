@@ -11,6 +11,7 @@
 // signature change.
 
 import type { InstanceType, FilterOptions } from "./types.js";
+import type { PriceOrigin } from "./price.js";
 
 export interface Finder {
   /** Human label for the active source: "bundled", "aws:us-east-1", "substrate". */
@@ -37,6 +38,8 @@ export interface SpotPriceResult {
   availabilityZone: string;
   spotPrice: number;
   onDemandPrice?: number;
+  /** Where `onDemandPrice` (the savings basis) came from — live or static, and why. */
+  onDemandPriceOrigin?: PriceOrigin;
   savingsPercent?: number;
   /** The Spot product description, e.g. "Linux/UNIX". */
   productType?: string;

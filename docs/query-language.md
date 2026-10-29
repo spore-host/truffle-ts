@@ -31,7 +31,7 @@ CPU-only Graviton types with nothing to suggest a constraint had been dropped
 | `Ngbps` / `Ng` / tier alias | min network | `100gbps`, `100g`, `ultranet` |
 | `efa` / `lowlatency` | EFA required | `efa` → EFA-capable families only |
 | `nested-virt` | nested virtualization | requires in-instance KVM/Hyper-V |
-| an **app** name | app | `paraview`, `igv`, `qgis` → recommended families + min vCPU/mem |
+| an **app** name or alias | app | `paraview` / `pv`, `fiji` / `imagej`, `chimerax` / `chimera`, `jupyter` → recommended families + min vCPU/mem (the libs app catalog) |
 | a **qualitative** word | sort hint | `cheapest`, `fastest`, `newest` (see below) |
 
 Aliases resolve to canonical forms — `inf`→`inferentia`, `a10`→`a10g`,

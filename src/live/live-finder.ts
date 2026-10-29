@@ -32,7 +32,13 @@ import type {
 } from "../core/finder.js";
 import { matchesFilters } from "../core/filter.js";
 import { mapInstanceType } from "./mapping.js";
-import { fetchOnDemandPrice, type PricingRegion } from "./pricing.js";
+import {
+  lookupOnDemandPrice,
+  lookupOnDemandPrices,
+  priceKey,
+  type PricingRegion,
+} from "./pricing.js";
+import type { PriceQuote } from "../core/price.js";
 import { fetchSpotPrices } from "./spot.js";
 import { canLaunch, fetchQuotas, fetchUsage, QUOTA_FAMILIES } from "./quotas.js";
 
@@ -40,15 +46,18 @@ export interface LiveFinderOptions {
   /**
    * Region(s) to query. Required — no implicit default, since a live call is
    * billable/latency-bearing and silently defaulting to us-east-1 is a footgun.
-   * Multiple regions fan out concurrently and dedupe by instance type.
+   * Multiple regions fan out concurrently; results carry `region` and hold one
+   * row per (instance type, region).
    */
   regions: string | string[];
   /** Explicit SDK credentials. Omit to use the default Node provider chain. */
   credentials?: AwsCredentialIdentity;
   /**
    * On-demand pricing for results. "off" (default) leaves onDemandPrice unset —
-   * callers can fill it from the bundled static pricing. "lazy" fetches real
-   * prices from the Pricing API for the (small) post-filter result set only.
+   * callers can fill it with `staticOnDemandPrice`, which labels it static.
+   * "lazy" prices the post-filter result set, each row in its own region: live
+   * from the Pricing API, else the static table, with `priceOrigin` saying which
+   * and why.
    */
   pricing?: "off" | "lazy";
   /** Pricing API endpoint region (it's only served from these two). Default us-east-1. */
@@ -92,8 +101,9 @@ export class AwsLiveFinder implements LiveFinder {
    * Query the configured regions for instance types matching `matcher` +
    * `filters`. Per region: if the matcher is an exact instance-type name, push
    * it into the request server-side (avoids paginating ~800 types); otherwise
-   * fetch all and filter in-memory. Fans out across regions, dedupes by type,
-   * and returns partial results if some regions fail (throws only if all do).
+   * fetch all and filter in-memory. Fans out across regions, returns one row per
+   * (type, region), and returns partial results if some regions fail (throws
+   * only if all do).
    */
   async search(matcher: RegExp, filters: FilterOptions): Promise<InstanceType[]> {
     const exact = exactTypeName(matcher);
@@ -106,11 +116,21 @@ export class AwsLiveFinder implements LiveFinder {
       throw new Error(`live search failed in all regions: ${first?.reason}`);
     }
 
-    // Dedupe by instance type (a type appears in many regions; the catalog shape
-    // is region-agnostic). Keep first occurrence, in region order.
-    const byType = new Map<string, InstanceType>();
-    for (const r of ok) for (const it of r.value) if (!byType.has(it.instanceType)) byType.set(it.instanceType, it);
-    const results = [...byType.values()];
+    // One row per (instance type, region), as Go appends every region's rows and
+    // its printer dedupes on resultKey{instanceType, region}. Deduping on the
+    // type alone (as this did before #31) collapsed a multi-region search to one
+    // row per type and lost which region it came from — answering a region
+    // question nobody asked, when price and availability both vary by region.
+    const seen = new Set<string>();
+    const results: InstanceType[] = [];
+    for (const r of ok) {
+      for (const it of r.value) {
+        const key = `${it.instanceType}\u0000${it.region}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        results.push(it);
+      }
+    }
 
     if (this.pricingMode === "lazy") await this.fillPrices(results);
     return results;
@@ -144,23 +164,34 @@ export class AwsLiveFinder implements LiveFinder {
       throw e;
     }
     return collected
-      .map(mapInstanceType)
+      .map((info) => ({ ...mapInstanceType(info), region }))
       .filter((it) => matcher.test(it.instanceType) && matchesFilters(it, filters));
   }
 
+  private pricingClient(): PricingClient {
+    this.pricing ??=
+      this.opts.pricingClient ??
+      new PricingClient({ region: this.pricingRegion, credentials: this.opts.credentials });
+    return this.pricing;
+  }
+
+  /**
+   * Price every row in ITS OWN region (before #31 every row was priced against
+   * the first configured region). Live first, then the static table with the
+   * live failure as its reason; a row neither can price is left without a price
+   * but with a `priceOrigin` saying why.
+   */
   private async fillPrices(results: InstanceType[]): Promise<void> {
-    this.pricing ??= this.opts.pricingClient ?? new PricingClient({ region: this.pricingRegion, credentials: this.opts.credentials });
-    const region = this.regions[0]; // price against the primary queried region
-    await Promise.all(
-      results.map(async (it) => {
-        try {
-          const usd = await fetchOnDemandPrice(this.pricing!, it.instanceType, region);
-          if (usd !== undefined) it.onDemandPrice = usd;
-        } catch {
-          // leave price unset on lookup failure
-        }
-      }),
+    const quotes = await lookupOnDemandPrices(
+      this.pricingClient(),
+      results.map((it) => ({ instanceType: it.instanceType, region: it.region! })),
     );
+    for (const it of results) {
+      const q = quotes.get(priceKey(it.instanceType, it.region!));
+      if (!q) continue;
+      if (q.price !== undefined) it.onDemandPrice = q.price;
+      it.priceOrigin = q.origin;
+    }
   }
 
   /** Account-enabled regions, via DescribeRegions (region-agnostic call). */
@@ -214,18 +245,12 @@ export class AwsLiveFinder implements LiveFinder {
     let lastErr: unknown;
 
     for (const type of types) {
-      // On-demand does not vary by AZ, so fetch once per type and reuse.
-      let onDemand: number | undefined;
-      if (opts.showSavings) {
-        try {
-          this.pricing ??=
-            this.opts.pricingClient ??
-            new PricingClient({ region: this.pricingRegion, credentials: this.opts.credentials });
-          onDemand = await fetchOnDemandPrice(this.pricing, type, region);
-        } catch {
-          // Savings is an annotation; losing it must not lose the spot price.
-        }
-      }
+      // On-demand does not vary by AZ, so fetch once per type and reuse. Same
+      // pricer as search (live, then static): savings is an annotation, so a
+      // failed lookup must not lose the spot price, but a static basis is
+      // labelled as such through onDemandPriceOrigin.
+      let onDemand: PriceQuote | undefined;
+      if (opts.showSavings) onDemand = await lookupOnDemandPrice(this.pricingClient(), type, region);
       try {
         results.push(...(await fetchSpotPrices(client, type, region, startTime, opts, onDemand)));
       } catch (e) {

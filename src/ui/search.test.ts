@@ -58,6 +58,17 @@ describe("SearchApp", () => {
     expect(prices).toEqual(sorted);
   });
 
+  it("labels the static prices: static, why, and when (truffle#184)", async () => {
+    const app = mount();
+    setQuery(app, "graviton 8 cores 32gb");
+    await submit(app);
+    const note = app.el.querySelector(".price-note")!;
+    expect(note.textContent).toBe(
+      "Prices (us-east-1) are static, collected 2026-07 (live Price List not consulted (offline lookup)).",
+    );
+    expect(app.el.querySelector("td.price")!.getAttribute("title")).toMatch(/^static, collected 2026-07/);
+  });
+
   it("clicking an example chip fills and runs it", async () => {
     const app = mount();
     (app.el.querySelector(".example") as HTMLButtonElement).click();

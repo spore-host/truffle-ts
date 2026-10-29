@@ -4,14 +4,17 @@
 // real CLI would return, minus the live-only fields (AZs, quotas, SageMaker)
 // that a browser can't populate without AWS credentials.
 
+import type { PriceOrigin } from "./price.js";
+
 /** CPU architecture of an instance type. */
 export type Architecture = "x86_64" | "arm64";
 
 /**
  * One EC2 instance type's capabilities. This is the shape of a bundled-catalog
  * entry and of a `Finder.search` result. Optional fields are omitted when zero/
- * unknown, matching the Go `omitempty` JSON tags. Prices are approximate static
- * estimates ("as of 2026-01"), never live.
+ * unknown, matching the Go `omitempty` JSON tags. Where a price came from is in
+ * `priceOrigin`: static (bundled catalog or libs table, with a collection date)
+ * unless a live finder priced it.
  */
 export interface InstanceType {
   /** e.g. "m6i.2xlarge". */
@@ -34,8 +37,21 @@ export interface InstanceType {
   gpuModel?: string;
   /** GPU vendor, e.g. "nvidia". */
   gpuManufacturer?: string;
-  /** On-demand $/hr. Live from the Pricing API when regenerated, else a static estimate. */
+  /**
+   * The region this record describes, set by a live finder (one record per type
+   * per region, as Go's InstanceTypeResult.Region). Absent on the bundled
+   * catalog, which is region-agnostic. Without it a multi-region search could
+   * only return one row per type and could not say which region that was (#31).
+   */
+  region?: string;
+  /** On-demand $/hr. Never 0: an unknown price is absent. See `priceOrigin`. */
   onDemandPrice?: number;
+  /**
+   * Where `onDemandPrice` came from: live, or static with a reason and a
+   * collection date (truffle#184). Set wherever a price is set; may also be set
+   * with source "unknown" and a reason when a lookup found no price.
+   */
+  priceOrigin?: PriceOrigin;
   /**
    * True when this entry's specs/price are NOT live AWS data — carried over from
    * the hand seed because the type isn't offered in the generated region (legacy

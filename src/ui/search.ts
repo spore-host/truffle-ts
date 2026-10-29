@@ -10,6 +10,7 @@ import {
   looksLikePattern,
   BundledFinder,
   CATALOG_AS_OF,
+  describePriceOrigin,
   type FindResult,
   type SortPreference,
 } from "../index.js";
@@ -128,13 +129,14 @@ export class SearchApp {
         const mem = (i.memoryMib / 1024).toLocaleString();
         const gpu = i.gpus ? `${i.gpus}× ${escapeHtml(i.gpuModel ?? "GPU")}` : "—";
         const price = i.onDemandPrice ? `$${i.onDemandPrice.toFixed(4)}` : "—";
+        const origin = i.priceOrigin ? describePriceOrigin(i.priceOrigin) : "no price";
         return `<tr>
           <td class="mono">${escapeHtml(i.instanceType)}</td>
           <td>${i.vcpus}</td>
           <td>${mem} GiB</td>
           <td>${gpu}</td>
           <td>${i.architecture}</td>
-          <td class="price">${price}<span class="hr">/hr</span></td>
+          <td class="price" title="${escapeHtml(origin)}">${price}<span class="hr">/hr</span></td>
           <td class="reasons">${r.reasons.map((x) => `<span>${escapeHtml(x)}</span>`).join("")}</td>
         </tr>`;
       })
@@ -143,12 +145,30 @@ export class SearchApp {
       <table>
         <thead><tr><th>type</th><th>vCPU</th><th>memory</th><th>GPU</th><th>arch</th><th>~$/hr</th><th>why</th></tr></thead>
         <tbody>${rows}</tbody>
-      </table>`;
+      </table>${priceNote(results)}`;
   }
 
   focus(): void {
     this.input.focus();
   }
+}
+
+/**
+ * One line per distinct price origin under the table. A static price must say
+ * that it is static, why, and when it was collected (truffle#184); a hover title
+ * alone is invisible on touch screens and in a screenshot.
+ */
+function priceNote(results: FindResult[]): string {
+  const origins = new Set<string>();
+  for (const r of results) {
+    const o = r.instance.priceOrigin;
+    if (r.instance.onDemandPrice !== undefined && o && o.source !== "live") {
+      const where = r.instance.region ?? (o.table === "bundled-catalog" ? "us-east-1" : undefined);
+      origins.add(`Prices${where ? ` (${where})` : ""} are ${describePriceOrigin(o)}.`);
+    }
+  }
+  if (origins.size === 0) return "";
+  return `<p class="price-note">${[...origins].map(escapeHtml).join("<br>")}</p>`;
 }
 
 function escapeHtml(s: string): string {

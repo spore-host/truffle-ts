@@ -55,7 +55,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:cov": "vitest run --coverage"
+    "test:cov": "vitest run --coverage",
+    "gen:upstream": "node scripts/gen-upstream.mjs"
   },
   "optionalDependencies": {
     "@aws-sdk/client-ec2": "^3.700.0",

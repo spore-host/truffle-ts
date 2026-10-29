@@ -31,6 +31,8 @@ export {
   SizeCategories,
   AppCatalog,
   lookupApp,
+  listApps,
+  APP_CATALOG_SOURCE,
 } from "./metadata/index.js";
 export type {
   ProcessorInfo,
@@ -38,6 +40,7 @@ export type {
   NetworkCapability,
   SizeCategory,
   AppEntry,
+  AppKind,
 } from "./metadata/index.js";
 
 // The one-call convenience: query string → ranked, explained results (offline).
@@ -64,8 +67,19 @@ export type {
   QuotaVerdict,
 } from "./core/finder.js";
 export { BundledFinder } from "./data/bundled-finder.js";
-export { loadBundledCatalog, CATALOG_AS_OF } from "./data/catalog.js";
-export { onDemandPrice, estimatePriceByFamily, EC2Pricing } from "./data/pricing.js";
+export { loadBundledCatalog, CATALOG_AS_OF, CATALOG_REGION } from "./data/catalog.js";
+export {
+  onDemandPrice,
+  staticOnDemandPrice,
+  EC2Pricing,
+  STATIC_EC2_PRICES,
+  STATIC_PRICES_AS_OF,
+  STATIC_PRICES_SOURCE,
+} from "./data/pricing.js";
+
+// Price provenance (truffle#184): every price says where it came from.
+export { describePrice, describePriceOrigin, OFFLINE_REASON } from "./core/price.js";
+export type { PriceSource, PriceOrigin, PriceQuote, StaticPriceTable } from "./core/price.js";
 
 // The find pipeline pieces (for consumers that want control over a step).
 export { parseQuery, sortPreference, qualitativeTokens } from "./core/parser.js";

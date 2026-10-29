@@ -13,6 +13,7 @@ import {
 } from "@aws-sdk/client-ec2";
 
 import type { SpotPriceResult, SpotOptions } from "../core/finder.js";
+import type { PriceQuote } from "../core/price.js";
 
 /** The product description truffle prices against (matches the Go tool). */
 export const SPOT_PRODUCT = "Linux/UNIX";
@@ -24,15 +25,18 @@ export const SPOT_PRODUCT = "Linux/UNIX";
  *
  * `onDemandPrice` is passed in rather than fetched: it does not vary by AZ, so
  * the caller fetches it once per instance type and reuses it across that type's
- * AZs (Go does the same).
+ * AZs (Go does the same). Pass a PriceQuote to carry its origin onto each
+ * result as `onDemandPriceOrigin`, so a static savings basis is labelled.
  */
 export function reduceSpotHistory(
   history: SpotPrice[],
   instanceType: string,
   region: string,
   opts: SpotOptions,
-  onDemandPrice?: number,
+  onDemand?: number | PriceQuote,
 ): SpotPriceResult[] {
+  const onDemandPrice = typeof onDemand === "number" ? onDemand : onDemand?.price;
+  const onDemandOrigin = typeof onDemand === "object" ? onDemand.origin : undefined;
   const trend = (opts.lookbackHours ?? 0) > 1;
   const usable = history.filter(
     (sp): sp is SpotPrice & { AvailabilityZone: string; SpotPrice: string } =>
@@ -54,6 +58,7 @@ export function reduceSpotHistory(
     if (sp.Timestamp) out.timestamp = new Date(sp.Timestamp).toISOString();
     if (opts.showSavings && onDemandPrice !== undefined && onDemandPrice > 0) {
       out.onDemandPrice = onDemandPrice;
+      if (onDemandOrigin) out.onDemandPriceOrigin = onDemandOrigin;
       // Guard spotPrice > 0: a zero/absent price would render as "100% savings",
       // which is a data artifact, not a deal.
       if (spotPrice > 0) out.savingsPercent = (1 - spotPrice / onDemandPrice) * 100;
@@ -95,7 +100,7 @@ export async function fetchSpotPrices(
   region: string,
   startTime: Date,
   opts: SpotOptions,
-  onDemandPrice?: number,
+  onDemand?: number | PriceQuote,
 ): Promise<SpotPriceResult[]> {
   const res = await client.send(
     new DescribeSpotPriceHistoryCommand({
@@ -104,5 +109,5 @@ export async function fetchSpotPrices(
       ProductDescriptions: [SPOT_PRODUCT],
     }),
   );
-  return reduceSpotHistory(res.SpotPriceHistory ?? [], instanceType, region, opts, onDemandPrice);
+  return reduceSpotHistory(res.SpotPriceHistory ?? [], instanceType, region, opts, onDemand);
 }

@@ -49,14 +49,27 @@ For consumers that want control over a stage:
   `getEnabledRegions()`, `getSpotPricing(instances, opts)`, `getQuotas(opts)`,
   `canLaunch(instance, quotas, spot?)`. Implemented by `AwsLiveFinder` on the
   [`./live` subpath](catalog.md#live-data-the-live-finder).
-- **`loadBundledCatalog()`**, **`CATALOG_AS_OF`** — the raw snapshot + its date.
-- **`onDemandPrice(type)`**, **`estimatePriceByFamily(type)`**, **`EC2Pricing`** —
-  static pricing. The first two return **`number | undefined`**; `undefined` means
-  no price is available and must render as unknown, never as `0`.
+- **`loadBundledCatalog()`**, **`CATALOG_AS_OF`**, **`CATALOG_REGION`**: the raw
+  snapshot, its date and the region its prices are for.
+- **`staticOnDemandPrice(type, region?)`**: a `PriceQuote` (`{ price?, origin }`)
+  from the static tables. Exact match only, never an estimate. See
+  [Pricing](catalog.md#pricing).
+- **`describePrice(quote)`**, **`describePriceOrigin(origin)`**: the one label for
+  a price's provenance. A static price always names its collection date and the
+  reason it's static (truffle#184).
+- **`onDemandPrice(type, region?)`**: `staticOnDemandPrice(...).price`, which is
+  `number | undefined`. `undefined` means no price is available and must render as
+  unknown, never as `0`.
+- **`STATIC_EC2_PRICES`**, **`STATIC_PRICES_AS_OF`**, **`STATIC_PRICES_SOURCE`**:
+  the libs-generated region-keyed table, its collection date and its source.
+  `EC2Pricing` is deprecated and kept as that table's us-east-1 slice.
+- **`lookupApp(nameOrAlias)`**, **`listApps()`**, **`AppCatalog`**: the app
+  catalog, generated from libs `catalog.yaml`. `lookupApp("imagej")` is fiji.
 
 ## Types
 
-`InstanceType`, `FilterOptions`, `FindResult`, `Architecture`, `ParsedQuery`,
+`InstanceType` (with `region?` on live rows, and `priceOrigin?`), `PriceSource`,
+`PriceOrigin`, `PriceQuote`, `FilterOptions`, `FindResult`, `Architecture`, `ParsedQuery`,
 `Token`, `TokenType`, `SortPreference`, `SearchCriteria`, the live-finder types
 (`SpotPriceResult`, `SpotOptions`, `QuotaFamily`, `QuotaInfo`, `QuotaOptions`,
 `QuotaVerdict`), and the metadata types (`ProcessorInfo`, `GPUInfo`,

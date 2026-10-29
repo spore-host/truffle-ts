@@ -92,11 +92,23 @@ describe("AwsLiveFinder", () => {
     expect(out.map((i) => i.instanceType)).toEqual(["m7i.4xlarge"]); // only the 16-vCPU one
   });
 
-  it("fans out across regions and dedupes by instance type", async () => {
+  // #31: Go appends every region's rows and dedupes on (instanceType, region).
+  // Deduping on the type alone returned ONE row for a type offered in both
+  // regions, and the row could not say which region it was.
+  it("returns one row per (type, region), each carrying its region (#31)", async () => {
     stubEc2(() => ({ InstanceTypes: [M7I_4XL] })); // both regions return the same type
-    const f = new AwsLiveFinder({ regions: ["us-east-1", "us-west-2"] });
+    const f = new AwsLiveFinder({ regions: ["us-east-1", "eu-west-1"] });
     const out = await f.search(/^m7i\.4xlarge$/, {});
-    expect(out).toHaveLength(1);
+    expect(out.map((i) => [i.instanceType, i.region])).toEqual([
+      ["m7i.4xlarge", "us-east-1"],
+      ["m7i.4xlarge", "eu-west-1"],
+    ]);
+  });
+
+  it("still dedupes a type listed twice by one region", async () => {
+    stubEc2(() => ({ InstanceTypes: [M7I_4XL, M7I_4XL] }));
+    const f = new AwsLiveFinder({ regions: "us-east-1" });
+    expect(await f.search(/^m7i\.4xlarge$/, {})).toHaveLength(1);
   });
 
   it("returns partial results when one region fails but another succeeds", async () => {
@@ -106,7 +118,7 @@ describe("AwsLiveFinder", () => {
     });
     const f = new AwsLiveFinder({ regions: ["us-east-1", "eu-west-1"] });
     const out = await f.search(/^m7i\.4xlarge$/, {});
-    expect(out.map((i) => i.instanceType)).toEqual(["m7i.4xlarge"]);
+    expect(out.map((i) => [i.instanceType, i.region])).toEqual([["m7i.4xlarge", "us-east-1"]]);
   });
 
   it("throws only when every region fails", async () => {
@@ -149,8 +161,59 @@ describe("AwsLiveFinder", () => {
     const f = new AwsLiveFinder({ regions: "us-east-1", pricing: "lazy" });
     const out = await f.search(/^m7i\.4xlarge$/, {});
     expect(out[0].onDemandPrice).toBe(0.8064);
+    expect(out[0].priceOrigin).toEqual({ source: "live" });
     // Priced only the one result, against the queried region.
     expect(pricingSent).toHaveLength(1);
+    const filters = Object.fromEntries(pricingSent[0].input.Filters.map((f: any) => [f.Field, f.Value]));
+    expect(filters).toMatchObject({ instanceType: "m7i.4xlarge", regionCode: "us-east-1", marketoption: "OnDemand" });
+  });
+
+  it("'lazy' pricing prices each row in its own region (#31)", async () => {
+    // Before #31 every row was priced against regions[0].
+    stubEc2(() => ({ InstanceTypes: [M7I_4XL] }));
+    const usd: Record<string, string> = { "us-east-1": "0.8064", "eu-west-1": "0.9000" };
+    vi.spyOn(PricingClient.prototype, "send").mockImplementation(((cmd: any) => {
+      const region = cmd.input.Filters.find((f: any) => f.Field === "regionCode").Value;
+      return Promise.resolve({
+        PriceList: [JSON.stringify({ terms: { OnDemand: { a: { priceDimensions: { b: { pricePerUnit: { USD: usd[region] } } } } } } })],
+      });
+    }) as any);
+    const f = new AwsLiveFinder({ regions: ["us-east-1", "eu-west-1"], pricing: "lazy" });
+    const out = await f.search(/^m7i\.4xlarge$/, {});
+    expect(out.map((i) => [i.region, i.onDemandPrice])).toEqual([
+      ["us-east-1", 0.8064],
+      ["eu-west-1", 0.9],
+    ]);
+  });
+
+  it("'lazy' pricing falls back to the static table and keeps the live failure as the reason", async () => {
+    stubEc2(() => ({ InstanceTypes: [M7I_4XL] }));
+    vi.spyOn(PricingClient.prototype, "send").mockImplementation(() => {
+      const e: any = new Error("Rate exceeded");
+      e.name = "ThrottlingException";
+      return Promise.reject(e) as any;
+    });
+    const f = new AwsLiveFinder({ regions: "us-east-1", pricing: "lazy" });
+    const [row] = await f.search(/^m7i\.4xlarge$/, {});
+    expect(row.onDemandPrice).toBeGreaterThan(0);
+    expect(row.priceOrigin).toMatchObject({
+      source: "static",
+      reason: "live Price List failed: ThrottlingException: Rate exceeded",
+    });
+    expect(row.priceOrigin!.collectedOn).toMatch(/^\d{4}-\d{2}/);
+  });
+
+  it("'lazy' pricing leaves a row unpriced, with a reason, when neither source has it", async () => {
+    stubEc2(() => ({ InstanceTypes: [{ ...M7I_4XL, InstanceType: "zz9.4xlarge" }] }));
+    vi.spyOn(PricingClient.prototype, "send").mockImplementation(() => Promise.resolve({ PriceList: [] }) as any);
+    const f = new AwsLiveFinder({ regions: "sa-east-1", pricing: "lazy" });
+    const [row] = await f.search(/^zz9\.4xlarge$/, {});
+    expect(row.onDemandPrice).toBeUndefined();
+    expect(row.priceOrigin).toEqual({
+      source: "unknown",
+      reason:
+        "live Price List has no on-demand price for zz9.4xlarge in sa-east-1; no static price table for region sa-east-1",
+    });
   });
 
 });
@@ -257,13 +320,22 @@ describe("AwsLiveFinder.getSpotPricing", () => {
     expect(pricingSent).toHaveLength(1);
   });
 
-  it("still returns spot prices when the on-demand lookup fails", async () => {
+  it("still returns spot prices when the on-demand lookup fails and nothing static has it", async () => {
     stubEc2(() => ({ SpotPriceHistory: [spotEntry("us-east-1a", "0.20")] }));
     vi.spyOn(PricingClient.prototype, "send").mockImplementation(() => Promise.reject(new Error("pricing boom")) as any);
     const f = new AwsLiveFinder({ regions: "us-east-1" });
-    const out = await f.getSpotPricing([it_("m7i.large")], { showSavings: true });
+    const out = await f.getSpotPricing([it_("zz9.large")], { showSavings: true });
     expect(out[0].spotPrice).toBe(0.2);
     expect(out[0].savingsPercent).toBeUndefined(); // the annotation is lost, the price isn't
+  });
+
+  it("computes savings against a LABELLED static rate when the live lookup fails (Go fallbackPricer)", async () => {
+    stubEc2(() => ({ SpotPriceHistory: [spotEntry("us-east-1a", "0.03")] }));
+    vi.spyOn(PricingClient.prototype, "send").mockImplementation(() => Promise.reject(new Error("pricing boom")) as any);
+    const f = new AwsLiveFinder({ regions: "us-east-1" });
+    const [row] = await f.getSpotPricing([it_("t3.large")], { showSavings: true });
+    expect(row.onDemandPrice).toBe(0.0832); // libs us-east-1
+    expect(row.onDemandPriceOrigin).toMatchObject({ source: "static", reason: "live Price List failed: pricing boom" });
   });
 });
 

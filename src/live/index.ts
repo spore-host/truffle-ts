@@ -7,8 +7,16 @@
 
 export { AwsLiveFinder, createLiveFinder, exactTypeName } from "./live-finder.js";
 export type { LiveFinderOptions } from "./live-finder.js";
-export { fetchOnDemandPrice, parseOnDemandUsd } from "./pricing.js";
-export type { PricingRegion } from "./pricing.js";
+export {
+  fetchOnDemandPrice,
+  parseOnDemandUsd,
+  onDemandFilters,
+  lookupOnDemandPrice,
+  lookupOnDemandPrices,
+  priceKey,
+  PRICE_LOOKUP_CONCURRENCY,
+} from "./pricing.js";
+export type { PricingRegion, PriceKey } from "./pricing.js";
 export { mapInstanceType } from "./mapping.js";
 export { fetchSpotPrices, reduceSpotHistory, SPOT_PRODUCT } from "./spot.js";
 export {

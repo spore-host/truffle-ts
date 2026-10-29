@@ -1,7 +1,7 @@
 // Result ranking — port of the sort.Slice comparator in Go cmd/find.go. Ranks
-// instance types by the query's SortPreference, with a stable tiebreak
-// (instance type, then — upstream — region; we sort by instance type alone
-// since the bundled catalog is region-agnostic).
+// instance types by the query's SortPreference, with a stable tiebreak on
+// instance type, then region (a live finder returns one row per type per
+// region, #31; the bundled catalog has no region, and sorts as before).
 
 import type { InstanceType } from "./types.js";
 import type { SortPreference } from "./parser.js";
@@ -73,8 +73,11 @@ export function sortResults(results: InstanceType[], pref: SortPreference): Inst
         break;
       }
     }
-    // Stable tiebreak.
+    // Stable tiebreak: instance type, then region, as Go.
     if (a.instanceType !== b.instanceType) return a.instanceType < b.instanceType ? -1 : 1;
+    const ra = a.region ?? "";
+    const rb = b.region ?? "";
+    if (ra !== rb) return ra < rb ? -1 : 1;
     return 0;
   });
   return sorted;

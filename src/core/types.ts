@@ -29,6 +29,11 @@ export interface InstanceType {
   /** Memory in MiB. */
   memoryMib: number;
   architecture: Architecture;
+  /**
+   * Availability zones the type is offered in, in zone order (standard AZs,
+   * then Local/Wavelength Zones). Set only by a live AZ lookup.
+   */
+  availableAZs?: string[];
   /** Number of GPUs; omitted for non-GPU instances. */
   gpus?: number;
   /** Total GPU memory in MiB across all GPUs. */
@@ -89,11 +94,14 @@ export interface FilterOptions {
   /** Minimum GPU count, e.g. 8 from "8 gpus" (#38). */
   minGpus?: number;
   /**
-   * Minimum VRAM **per GPU** in GiB, compared against `gpuMemoryMib / gpus`.
-   * Per-GPU, not aggregate: an 8×16 GiB T4 box has 128 GiB of `gpuMemoryMib` and
-   * must not satisfy "80gb vram".
+   * Minimum VRAM **per GPU**, compared against `gpuMemoryMib / gpus` read as the
+   * size the GPU is sold as (GiB for an H100's 80, GB for an A10G's 24 — Go
+   * MatchesGPUMemory, #236/#244). Per-GPU, not aggregate: an 8×16 GiB T4 box has
+   * 128 GiB of `gpuMemoryMib` and must not satisfy "80gb vram".
    */
   minGpuMemoryGiB?: number;
+  /** Match `minGpuMemoryGiB` exactly (within half a GB) rather than as a minimum. */
+  exactGpuMemory?: boolean;
 }
 
 /** One ranked result: the matched instance plus human-readable match reasons. */

@@ -33,6 +33,8 @@ export type TokenType =
   | "gpuAny"
   /** Per-GPU VRAM, e.g. "80gb vram" — distinct from `memory` (system RAM). */
   | "gpuMemory"
+  /** Host memory marked as such, e.g. "64gb ram" (Go TokenHostMemory, #236). */
+  | "hostMemory"
   | "architecture"
   | "networkSpeed"
   | "efa"
@@ -89,6 +91,11 @@ export interface ParsedQuery {
   ignored: string[];
   /** Application names (resolved to hardware in buildCriteria). */
   apps: string[];
+  /**
+   * The bare size ("24gb") a GPU query read as per-GPU memory rather than host
+   * memory; absent if none (Go GPUMemoryRead, #236). See `memoryReadingNote`.
+   */
+  gpuMemoryRead?: string;
 }
 
 /** Qualitative sort derived from keywords like "cheapest", "fastest". */
@@ -109,6 +116,43 @@ const gpuAnyWords = new Set([
 
 /** Words that mark a preceding memory figure as per-GPU VRAM rather than DRAM. */
 const vramWords = new Set(["vram", "hbm", "gpu-memory", "gpumemory"]);
+
+/** Words that mark a preceding memory figure as host memory (Go #236). */
+const hostMemWords = new Set(["memory", "mem", "ram"]);
+
+/**
+ * Classify a memory size by the words after it, at words[next…] (Go
+ * memoryToken, #236): "ram" / "memory" / "mem" / "host memory" / "host ram"
+ * mark HOST memory; "vram" / "hbm" / "gpu memory" / "gpu mem" / "gpu ram" /
+ * "per gpu" mark PER-GPU memory. With none it is a bare `memory` token, whose
+ * meaning depends on the rest of the query (see parseQuery). Returns the token
+ * and how many following words it consumed.
+ */
+function memoryToken(size: string, words: string[], next: number): { token: Token; consumed: number } {
+  const first = words[next] ?? "";
+  const second = words[next + 1] ?? "";
+  if (hostMemWords.has(first)) return { token: { type: "hostMemory", value: size, raw: `${size} ${first}` }, consumed: 1 };
+  if (first === "host" && hostMemWords.has(second)) {
+    return { token: { type: "hostMemory", value: size, raw: `${size} host ${second}` }, consumed: 2 };
+  }
+  if (vramWords.has(first)) return { token: { type: "gpuMemory", value: size, raw: `${size} ${first}` }, consumed: 1 };
+  if ((first === "gpu" && hostMemWords.has(second)) || (first === "per" && second === "gpu")) {
+    return { token: { type: "gpuMemory", value: size, raw: `${size} ${first} ${second}` }, consumed: 2 };
+  }
+  return { token: { type: "memory", value: size, raw: size }, consumed: 0 };
+}
+
+/**
+ * The parts of a hyphenated and/or "!"/"+"-suffixed word, or undefined when
+ * there is nothing to split (so classification can't recurse forever). Ports
+ * Go normalizeHyphenatedToken (#130).
+ */
+function hyphenatedSubwords(word: string): string[] | undefined {
+  const stripped = word.replace(/[!+]$/, "");
+  if (!stripped.includes("-")) return stripped === word || stripped === "" ? undefined : [stripped];
+  const parts = stripped.split("-").filter(Boolean);
+  return parts.length > 0 ? parts : undefined;
+}
 
 /**
  * The attached count form, "8gpu"/"8gpus". Go's parser only handles the spaced
@@ -167,6 +211,8 @@ export function parseQuery(query: string): ParsedQuery {
     requireEfa: false, requireNestedV: false, exactMatch: false,
     rawTokens: tokens, ignored: [], apps: [],
   };
+  let bareMemory = 0;
+  let bareMemoryRaw = "";
 
   for (const token of tokens) {
     switch (token.type) {
@@ -176,7 +222,8 @@ export function parseQuery(query: string): ParsedQuery {
       case "size": pq.sizes.push(token.value); break;
       case "vcpu": { const v = parseInt(token.value, 10); if (!Number.isNaN(v)) pq.minVcpu = v; break; }
       case "physicalCores": { const v = parseInt(token.value, 10); if (!Number.isNaN(v)) pq.minPhysCores = v; break; }
-      case "memory": { const v = parseMemory(token.value); if (v !== null) pq.minMemory = v; break; }
+      case "memory": { const v = parseMemory(token.value); if (v !== null) (bareMemory = v), (bareMemoryRaw = token.raw); break; }
+      case "hostMemory": { const v = parseMemory(token.value); if (v !== null) pq.minMemory = v; break; }
       case "gpuCount": { const v = parseInt(token.value, 10); if (!Number.isNaN(v)) pq.gpuCount = v; break; }
       case "gpuAny": pq.requireGpu = true; break;
       case "gpuMemory": { const v = parseMemory(token.value); if (v !== null) pq.minGpuMemory = v; break; }
@@ -189,16 +236,26 @@ export function parseQuery(query: string): ParsedQuery {
     }
   }
 
-  // "gpu with 80gb" almost certainly means an 80 GiB card, not 80 GiB of DRAM —
-  // that misreading is exactly what made the query return CPU-only instances
-  // (#37). Reinterpret a bare memory figure as VRAM when the query asked for a
-  // GPU and gave no explicit VRAM. A named model ("a100 80gb") is left alone:
-  // resolveGpuInstances already pins the exact types, so system memory there is
-  // more likely a genuine second constraint.
-  if (pq.requireGpu && pq.minGpuMemory === 0 && pq.minMemory > 0 && pq.gpus.length === 0) {
-    pq.minGpuMemory = pq.minMemory;
-    pq.minMemory = 0;
+  // A bare size ("80gb", no "ram"/"vram" after it) means memory PER GPU in a
+  // query for a GPU — "gpu with 80gb", and since Go #236 also "h100 80gb" /
+  // "a100 80gb" (the 80 GB parts) — and host memory otherwise. An explicit
+  // marker on the other kind decides it: "24gb vram 64gb" makes the bare size
+  // host memory, "a10g 64gb ram 24gb" makes it per-GPU. Ports Go
+  // assignBareMemory. (truffle-ts used to keep a named card's bare size as host
+  // memory, so "a100 80gb" matched p4d's 40 GB A100s by their 1152 GiB of RAM.)
+  if (bareMemory > 0) {
+    const wantsGpu = pq.gpus.length > 0 || pq.requireGpu || pq.gpuCount > 0 || pq.minGpuMemory > 0;
+    if (pq.minGpuMemory === 0 && wantsGpu) {
+      pq.minGpuMemory = bareMemory;
+      pq.gpuMemoryRead = bareMemoryRaw;
+    } else if (pq.minMemory === 0) {
+      pq.minMemory = bareMemory;
+    }
   }
+
+  // A query whose words are all unknown would match — and a live finder would
+  // price — every instance type (Go #229). Refuse it, naming the words.
+  if (pq.ignored.length > 0 && !hasConstraints(pq)) throw new UnrecognizedQueryError(pq.ignored);
 
   // Any VRAM or GPU-count constraint implies a GPU is required, so callers only
   // ever need to check requireGpu rather than all three.
@@ -286,27 +343,27 @@ function classifyTokens(words: string[]): Token[] {
         tokens.push({ type: "gpuCount", value: word, raw: `${word} ${next}` });
         i++;
       } else if (next !== undefined && (memoryRegex.test(next) || next.endsWith("gb") || next.endsWith("gib") || next.endsWith("g"))) {
-        // "80 gb vram" — the unit is a separate word, so VRAM is two ahead.
-        if (vramWords.has(words[i + 2] ?? "")) {
-          tokens.push({ type: "gpuMemory", value: word + next, raw: `${word}${next} ${words[i + 2]}` });
-          i += 2;
-        } else {
-          tokens.push({ type: "memory", value: word + next, raw: word + next });
-          i++;
-        }
+        // "80 gb vram" / "64 gb ram" — the unit is a separate word, so the
+        // marker starts two ahead.
+        const { token, consumed } = memoryToken(word + next, words, i + 2);
+        tokens.push(token);
+        i += 1 + consumed;
       } else {
         tokens.push({ type: "unknown", value: word, raw: word });
       }
     } else if (memoryRegex.test(word)) {
-      // "80gb vram" — the unit is attached, so the VRAM marker is the next word.
-      if (vramWords.has(words[i + 1] ?? "")) {
-        tokens.push({ type: "gpuMemory", value: word, raw: `${word} ${words[i + 1]}` });
-        i++;
-      } else {
-        tokens.push({ type: "memory", value: word, raw: word });
-      }
+      // "80gb vram" / "64gb ram" — the unit is attached, so the marker is next.
+      const { token, consumed } = memoryToken(word, words, i + 1);
+      tokens.push(token);
+      i += consumed;
     } else if (qualitativeKeywords.has(word)) {
       tokens.push({ type: "qualitative", value: word, raw: word });
+    } else if (hyphenatedSubwords(word)) {
+      // A Modal-style GPU spec string arrives as ONE word: "rtx-pro-6000",
+      // "a100-80gb", "h100!", "b200+". Re-classify its parts as if they had been
+      // space-separated (Go normalizeHyphenatedToken, #130), so "a100-80gb"
+      // reads like "a100 80gb". A part that still means nothing stays unknown.
+      tokens.push(...classifyTokens(hyphenatedSubwords(word)!));
     } else {
       tokens.push({ type: "unknown", value: word, raw: word });
     }
@@ -382,4 +439,134 @@ function validate(pq: ParsedQuery): void {
   if (archSet.size > 1) {
     throw new Error(`conflicting architectures: ${[...archSet].join(", ")}`);
   }
+}
+
+/** Whether the query constrains the search at all (Go hasConstraints). */
+export function hasConstraints(pq: ParsedQuery): boolean {
+  return (
+    pq.vendors.length > 0 || pq.processors.length > 0 || pq.gpus.length > 0 || pq.sizes.length > 0 ||
+    pq.apps.length > 0 || pq.minVcpu > 0 || pq.minPhysCores > 0 || pq.minMemory > 0 || pq.minGpuMemory > 0 ||
+    pq.gpuCount > 0 || pq.requireGpu || pq.architecture !== "" || pq.minNetworkGbps > 0 || pq.requireEfa ||
+    pq.requireNestedV
+  );
+}
+
+/**
+ * Whether one space-free word is fully understood by the parser — every token
+ * it yields is classified (Go IsRecognizedTerm, #130). The pattern router asks
+ * this first, so a GPU name like "a100" or "a100-80gb" is never read as an
+ * instance-type name.
+ */
+export function isRecognizedTerm(word: string): boolean {
+  const w = word.trim().toLowerCase();
+  if (w === "" || /\s/.test(w)) return false;
+  const toks = classifyTokens([w]);
+  return toks.length > 0 && toks.every((t) => t.type !== "unknown");
+}
+
+/**
+ * The one-line note for a query whose bare size was read as per-GPU memory,
+ * saying how to ask for host memory instead (Go MemoryReadingNote, #236).
+ */
+export function memoryReadingNote(pq: ParsedQuery): string {
+  if (!pq.gpuMemoryRead) return "";
+  return `Note: reading "${pq.gpuMemoryRead}" as memory per GPU (at least ${pq.minGpuMemory} GB/GiB, as the GPU is sold); write "${pq.gpuMemoryRead} ram" for host memory`;
+}
+
+/**
+ * Thrown by parseQuery for a query with unknown words and nothing that narrows
+ * the search (Go UnrecognizedQueryError, #229) — "zzqx" used to match all 231
+ * bundled types. `suggestions` maps a term to the closest known word.
+ */
+export class UnrecognizedQueryError extends Error {
+  readonly terms: string[];
+  readonly suggestions: Record<string, string>;
+  constructor(terms: string[]) {
+    const suggestions = suggestTerms(terms);
+    const parts = terms.map((t) => `"${t}"${suggestions[t] ? ` (did you mean "${suggestions[t]}"?)` : ""}`);
+    super(
+      `no recognised search terms; unknown ${terms.length > 1 ? "terms" : "term"}: ${parts.join(", ")}\n` +
+        "Try a vendor (amd, intel, graviton), processor (turin, ice lake), GPU (h100, a10g), " +
+        'family (g5, m7i), size (xlarge, large), or specs (16 cores, 64gb), or an instance-type pattern such as "g5.*"',
+    );
+    this.name = "UnrecognizedQueryError";
+    this.terms = terms;
+    this.suggestions = suggestions;
+  }
+}
+
+/** Words that look like an instance family, for the pattern suggestion. */
+const familyShaped = /^[a-z]+[0-9][a-z0-9-]*$/;
+
+/**
+ * For each term with a close match in the parser's vocabulary, that match:
+ * within edit distance 2 (1 for words of four letters or fewer), smallest
+ * distance first, then longest shared prefix, then alphabetical. A
+ * family-shaped term with no close match is suggested as a pattern ("zz9q" →
+ * "zz9q.*"). Ports Go SuggestTerms.
+ */
+export function suggestTerms(terms: readonly string[]): Record<string, string> {
+  const vocab = vocabulary();
+  const out: Record<string, string> = {};
+  for (const term of terms) {
+    const t = term.toLowerCase();
+    const limit = t.length <= 4 ? 1 : 2;
+    let best = "";
+    let bestD = limit + 1;
+    let bestP = 0;
+    for (const w of vocab) {
+      const d = editDistance(t, w, limit);
+      const p = sharedPrefix(t, w);
+      if (d < bestD || (d === bestD && d <= limit && p > bestP)) (best = w), (bestD = d), (bestP = p);
+    }
+    if (best !== "" && best !== t) out[term] = best;
+    else if (familyShaped.test(t)) out[term] = `${t}.*`;
+  }
+  return out;
+}
+
+let vocabCache: string[] | undefined;
+/** Every single word the parser recognises on its own, sorted (Go vocabulary). */
+function vocabulary(): string[] {
+  if (vocabCache) return vocabCache;
+  const set = new Set<string>();
+  const add = (w: string) => {
+    if (!w.includes(" ")) set.add(w);
+  };
+  for (const k of Object.keys(VendorAliases)) add(k);
+  for (const [k, info] of Object.entries(ProcessorDatabase)) (add(k), info.families.forEach(add));
+  for (const [k, info] of Object.entries(GPUDatabase)) (add(k), info.families.forEach(add));
+  for (const k of Object.keys(GPUAliases)) add(k);
+  for (const k of gpuAnyWords) add(k);
+  for (const k of Object.keys(SizeCategories)) add(k);
+  for (const k of Object.keys(NetworkAliases)) add(k);
+  for (const k of qualitativeKeywords) add(k);
+  for (const w of ["efa", "x86_64", "arm64", "cores", "vcpus", "gpus", "xlarge", "nano", "micro", "metal"]) add(w);
+  vocabCache = [...set].sort();
+  return vocabCache;
+}
+
+/** Levenshtein distance, or limit+1 once it is known to exceed limit (Go editDistance). */
+export function editDistance(a: string, b: string, limit: number): number {
+  if (Math.abs(a.length - b.length) > limit) return limit + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  let cur = new Array<number>(b.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i++) {
+    cur[0] = i;
+    let rowMin = cur[0];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      rowMin = Math.min(rowMin, cur[j]);
+    }
+    if (rowMin > limit) return limit + 1;
+    [prev, cur] = [cur, prev];
+  }
+  return prev[b.length];
+}
+
+function sharedPrefix(a: string, b: string): number {
+  let n = 0;
+  while (n < a.length && n < b.length && a[n] === b[n]) n++;
+  return n;
 }

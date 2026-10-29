@@ -4,6 +4,7 @@
 // filter is a single pass with no network.
 
 import type { InstanceType, FilterOptions } from "./types.js";
+import { matchesGpuMemory, perGpuMemoryMib } from "./derive.js";
 
 /** The family prefix of an instance type, e.g. "m6i.2xlarge" → "m6i". */
 export function extractFamily(instanceType: string): string {
@@ -68,7 +69,10 @@ export function matchesFilters(it: InstanceType, opts: FilterOptions): boolean {
     // under-specified entry is the safe direction: the alternative is presenting
     // an unverified type as a confirmed match.
     if (gpus < 1 || !it.gpuMemoryMib) return false;
-    if (perGpuMemoryGiB(it) < opts.minGpuMemoryGiB) return false;
+    // Compared as the GPU is SOLD (Go MatchesGPUMemory, #236): the A10G and L4
+    // report 22888 MiB (22.35 GiB) and are 24 GB parts, so "gpu 24gb" must
+    // match them. A plain GiB comparison silently dropped both.
+    if (!matchesGpuMemory(perGpuMemoryMib(it), opts.minGpuMemoryGiB, opts.exactGpuMemory)) return false;
   }
 
   return true;

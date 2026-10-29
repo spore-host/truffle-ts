@@ -69,7 +69,7 @@ describe("explainMatch", () => {
       // 640 GiB across 8 cards is 80 GiB each; reporting 640 would misread as a
       // single enormous card.
       expect(explainMatch(p5vram, parseQuery("gpu 80gb vram")))
-        .toContain("GPU memory: 80 GiB/GPU >= 80 GiB");
+        .toContain("GPU memory: 80 GiB >= 80");
     });
 
     it("says nothing about GPUs when the query didn't ask", () => {

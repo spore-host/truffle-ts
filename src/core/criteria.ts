@@ -36,6 +36,7 @@ export function buildCriteria(pq: ParsedQuery): SearchCriteria {
     requireGpu: pq.requireGpu,
     minGpus: pq.gpuCount,
     minGpuMemoryGiB: pq.minGpuMemory,
+    exactGpuMemory: pq.exactMatch,
   };
 
   // Apply app-catalog hardware minimums only when the user gave no explicit ones.

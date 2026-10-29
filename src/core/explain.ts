@@ -11,7 +11,8 @@ import {
 } from "../metadata/index.js";
 import type { InstanceType } from "./types.js";
 import type { ParsedQuery } from "./parser.js";
-import { extractFamily, perGpuMemoryGiB } from "./filter.js";
+import { extractFamily } from "./filter.js";
+import { formatGpuMemory, matchesGpuMemory, perGpuMemoryMib } from "./derive.js";
 
 /** Annotate why `it` matched `query`, in the Go phrasing/order. */
 export function explainMatch(it: InstanceType, query: ParsedQuery): string[] {
@@ -62,9 +63,11 @@ export function explainMatch(it: InstanceType, query: ParsedQuery): string[] {
   }
 
   if (query.minGpuMemory > 0) {
-    const perGpu = perGpuMemoryGiB(it);
-    if (perGpu >= query.minGpuMemory) {
-      reasons.push(`GPU memory: ${Math.round(perGpu)} GiB/GPU >= ${Math.round(query.minGpuMemory)} GiB`);
+    // As Go (#236/#244): the device's size in the unit it is sold in, compared
+    // with the request's number — "GPU memory: 24 GB >= 24", "80 GiB >= 80".
+    const mib = perGpuMemoryMib(it);
+    if (matchesGpuMemory(mib, query.minGpuMemory, query.exactMatch)) {
+      reasons.push(`GPU memory: ${formatGpuMemory(mib)} >= ${query.minGpuMemory}`);
     }
   }
 

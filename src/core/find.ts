@@ -64,6 +64,6 @@ export async function findInstances(
 ): Promise<FindResult[]> {
   const { pattern, filters } = buildCriteria(parsed);
   const hits = await finder.search(pattern, filters);
-  const ranked = sortResults(hits, opts.sort ?? sortPreference(parsed));
+  const ranked = sortResults(hits, opts.sort ?? sortPreference(parsed), filters);
   return ranked.map((instance) => ({ instance, reasons: explainMatch(instance, parsed) }));
 }

@@ -67,3 +67,14 @@ export async function findInstances(
   const ranked = sortResults(hits, opts.sort ?? sortPreference(parsed), filters);
   return ranked.map((instance) => ({ instance, reasons: explainMatch(instance, parsed) }));
 }
+
+/**
+ * Every instance type the finder knows, sorted — the offline twin of Go
+ * `truffle list` (#33). With the default BundledFinder that is the bundled
+ * catalog; an AwsLiveFinder's `listInstanceTypes(region)` is the live one.
+ * Use `instanceFamilies` / `instanceSizes` for `list --family` / `--sizes`.
+ */
+export async function listInstanceTypes(finder: Finder = defaultFinder): Promise<string[]> {
+  const rows = await finder.search(/.*/, {});
+  return [...new Set(rows.map((r) => r.instanceType))].sort();
+}

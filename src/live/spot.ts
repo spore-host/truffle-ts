@@ -111,3 +111,20 @@ export async function fetchSpotPrices(
   );
   return reduceSpotHistory(res.SpotPriceHistory ?? [], instanceType, region, opts, onDemand);
 }
+
+/**
+ * Deterministic spot row order (Go sortSpotResults, #217): by price when
+ * `byPrice`, then type, region, AZ and product. One price across several AZs is
+ * common, so ties must not reorder between runs.
+ */
+export function sortSpotResults(results: readonly SpotPriceResult[], byPrice = false): SpotPriceResult[] {
+  const cmp = (a = "", b = "") => (a < b ? -1 : a > b ? 1 : 0);
+  return [...results].sort(
+    (a, b) =>
+      (byPrice ? a.spotPrice - b.spotPrice : 0) ||
+      cmp(a.instanceType, b.instanceType) ||
+      cmp(a.region, b.region) ||
+      cmp(a.availabilityZone, b.availabilityZone) ||
+      cmp(a.productType, b.productType),
+  );
+}

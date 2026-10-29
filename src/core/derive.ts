@@ -412,3 +412,15 @@ export function hasDistinctTimestamps(results: readonly { timestamp?: string }[]
   if (results.length < 2) return false;
   return results.some((r) => r.timestamp !== results[0].timestamp);
 }
+
+// ── `truffle list` (Go cmd/list.go extractFamilies / extractSizes, #33) ───────
+
+/** The distinct families of `types` ("m5.large" → "m5"), sorted. */
+export function instanceFamilies(types: readonly string[]): string[] {
+  return uniqueSorted(types.map((t) => t.split(".")[0]).filter(Boolean));
+}
+
+/** The distinct sizes of `types` ("m5.large" → "large"), sorted. Types without a size are skipped. */
+export function instanceSizes(types: readonly string[]): string[] {
+  return uniqueSorted(types.map((t) => t.split(".")[1]).filter((s): s is string => !!s));
+}

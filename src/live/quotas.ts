@@ -122,7 +122,9 @@ export function canLaunch(
   const family = quotaFamilyFor(instance.instanceType);
   const requestedVcpus = instance.vcpus || vcpusForSize(instance.instanceType) || 0;
   const limit = (spot ? quotas.spot : quotas.onDemand)[family];
-  const used = quotas.usage[family] ?? 0;
+  // Spot is checked against Spot usage (Go #132): an account whose Spot quota
+  // is already full got a false "fits" when only the limit was compared.
+  const used = (spot ? quotas.spotUsage : quotas.usage)?.[family] ?? 0;
   const kind = spot ? "Spot" : "On-Demand";
 
   if (limit === undefined) {
@@ -233,14 +235,20 @@ async function getQuotaValue(
 }
 
 /**
- * Current vCPU usage per family, from running+pending instances. Ports Go
- * getCurrentUsage. Paginates, unlike the Go version, which reads only the first
+ * Current vCPU usage per family, from running+pending instances, split into
+ * On-Demand (`usage`) and Spot (`spotUsage`) by InstanceLifecycle. Ports Go
+ * currentUsage (#132). Paginates, unlike the Go version, which reads only the first
  * page — an account with enough instances would silently understate usage there.
  */
 export async function fetchUsage(
   client: EC2Client,
-): Promise<{ usage: Partial<Record<QuotaFamily, number>>; runningInstances: number }> {
+): Promise<{
+  usage: Partial<Record<QuotaFamily, number>>;
+  spotUsage: Partial<Record<QuotaFamily, number>>;
+  runningInstances: number;
+}> {
   const usage: Partial<Record<QuotaFamily, number>> = {};
+  const spotUsage: Partial<Record<QuotaFamily, number>> = {};
   let runningInstances = 0;
   let token: string | undefined;
   do {
@@ -262,10 +270,14 @@ export async function fetchUsage(
           ? inst.CpuOptions.CoreCount * inst.CpuOptions.ThreadsPerCore
           : vcpusForSize(type);
         if (vcpus === undefined) continue;
-        usage[family] = (usage[family] ?? 0) + vcpus;
+        // Split by lifecycle, as Go #132: Spot vCPUs count against the Spot
+        // quota, not On-Demand. Summing both overstated On-Demand usage and gave
+        // the Spot check no usage at all.
+        const into = inst.InstanceLifecycle === "spot" ? spotUsage : usage;
+        into[family] = (into[family] ?? 0) + vcpus;
       }
     }
     token = res.NextToken;
   } while (token);
-  return { usage, runningInstances };
+  return { usage, spotUsage, runningInstances };
 }

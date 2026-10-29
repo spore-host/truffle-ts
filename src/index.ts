@@ -44,7 +44,7 @@ export type {
 } from "./metadata/index.js";
 
 // The one-call convenience: query string → ranked, explained results (offline).
-export { find, findInstances, findByPattern } from "./core/find.js";
+export { find, findInstances, findByPattern, listInstanceTypes } from "./core/find.js";
 export type { FindOptions } from "./core/find.js";
 
 // Glob/regex pattern detection + conversion (find auto-routes to these).
@@ -98,3 +98,38 @@ export type { SearchCriteria } from "./core/criteria.js";
 export { matchesFilters, extractFamily, perGpuMemoryGiB } from "./core/filter.js";
 export { explainMatch } from "./core/explain.js";
 export { sortResults, instanceGeneration } from "./core/sort.js";
+
+// Pure derivations Go computes in its printer and commands (#34): ranking,
+// GPU memory "as sold", limits, families, zones, price units, ratios.
+export {
+  sortFindResults,
+  fitDistance,
+  hasSizeSpec,
+  minimumSpecHint,
+  limitTypes,
+  limitNote,
+  nominalGpuMemory,
+  nominalGpuMemoryGB,
+  formatGpuMemory,
+  formatSize,
+  matchesGpuMemory,
+  perGpuMemoryMib,
+  isGPUFamily,
+  GPU_FAMILY_PREFIXES,
+  compareZoneNames,
+  sortZoneNames,
+  zoneNamesSorted,
+  uniqueSorted,
+  countUniqueRegions,
+  formatPrice,
+  priceHeaderFor,
+  savingsPercent,
+  gpuRatios,
+  memPerPhysicalCoreGiB,
+  truncateWithEllipsis,
+  shortenReservationID,
+  hasDistinctTimestamps,
+  instanceFamilies,
+  instanceSizes,
+} from "./core/derive.js";
+export type { MemoryUnit, PriceUnit } from "./core/derive.js";

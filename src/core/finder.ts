@@ -76,8 +76,10 @@ export interface QuotaInfo {
   onDemand: Partial<Record<QuotaFamily, number>>;
   /** Max Spot vCPUs per family. */
   spot: Partial<Record<QuotaFamily, number>>;
-  /** vCPUs currently in use (running + pending) per family. */
+  /** On-Demand vCPUs currently in use (running + pending) per family. Excludes Spot. */
   usage: Partial<Record<QuotaFamily, number>>;
+  /** Spot vCPUs currently in use per family (Go QuotaInfo.SpotUsage, #132). */
+  spotUsage?: Partial<Record<QuotaFamily, number>>;
   /** Count of running+pending instances in the region. */
   runningInstances?: number;
   /** When this snapshot was taken, ISO-8601. */

@@ -124,10 +124,23 @@ describe("canLaunch", () => {
     expect(v.reason).toMatch(/Standard/);
   });
 
-  it("checks the SPOT limit when spot=true", () => {
-    // 32 spot limit, 16 used → 16 free; a 32-vCPU launch fits on-demand but not spot.
-    expect(canLaunch(inst("m7i.8xlarge", 32), snap()).canLaunch).toBe(true);
-    expect(canLaunch(inst("m7i.8xlarge", 32), snap(), true).canLaunch).toBe(false);
+  it("checks the SPOT limit against SPOT usage when spot=true (Go #132)", () => {
+    // 32 spot limit, 16 spot vCPUs used → 16 free; a 32-vCPU launch fits on-demand but not spot.
+    const s = snap({ spotUsage: { Standard: 16 } });
+    expect(canLaunch(inst("m7i.8xlarge", 32), s).canLaunch).toBe(true);
+    expect(canLaunch(inst("m7i.8xlarge", 32), s, true).canLaunch).toBe(false);
+  });
+
+  it("refuses a spot launch into a Spot quota already saturated by spot instances (Go #132)", () => {
+    // The real-world case: a 64-vCPU Spot quota filled by 8 running spot
+    // instances got a false "fits" for 2 more, because only the limit was
+    // compared — and the launch then failed with MaxSpotInstanceCountExceeded.
+    const s = snap({ spot: { Standard: 64 }, usage: {}, spotUsage: { Standard: 64 } });
+    const v = canLaunch(inst("m7i.2xlarge", 8), s, true);
+    expect(v.canLaunch).toBe(false);
+    expect(v.availableVcpus).toBe(0);
+    // ...and On-Demand usage no longer includes those spot vCPUs.
+    expect(canLaunch(inst("m7i.2xlarge", 8), s).availableVcpus).toBe(64);
   });
 
   it("treats an UNKNOWN limit as launchable, not as zero", () => {
@@ -239,6 +252,21 @@ describe("fetchUsage", () => {
     const { usage, runningInstances } = await fetchUsage(new EC2Client({ region: "us-east-1" }));
     expect(usage.Standard).toBe(16);
     expect(usage.P).toBe(192);
+    expect(runningInstances).toBe(2);
+  });
+
+  it("splits Spot from On-Demand usage by InstanceLifecycle (Go #132)", async () => {
+    stubEc2Instances([
+      {
+        Reservations: [
+          { Instances: [{ InstanceType: "m7i.4xlarge", CpuOptions: { CoreCount: 8, ThreadsPerCore: 2 } }] },
+          { Instances: [{ InstanceType: "m7i.2xlarge", InstanceLifecycle: "spot", CpuOptions: { CoreCount: 4, ThreadsPerCore: 2 } }] },
+        ],
+      },
+    ]);
+    const { usage, spotUsage, runningInstances } = await fetchUsage(new EC2Client({ region: "us-east-1" }));
+    expect(usage.Standard).toBe(16);
+    expect(spotUsage.Standard).toBe(8);
     expect(runningInstances).toBe(2);
   });
 

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { EC2Client, DescribeSpotPriceHistoryCommand, type SpotPrice } from "@aws-sdk/client-ec2";
-import { fetchSpotPrices, reduceSpotHistory, SPOT_PRODUCT } from "./spot.js";
+import { fetchSpotPrices, reduceSpotHistory, sortSpotResults, SPOT_PRODUCT } from "./spot.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -213,5 +213,36 @@ describe("fetchSpotPrices", () => {
     await expect(
       fetchSpotPrices(new EC2Client({ region: "us-east-1" }), "m7i.large", "us-east-1", new Date(T1), {}),
     ).rejects.toThrow(/spot boom/);
+  });
+});
+
+// Ported from Go cmd/az_order_test.go TestSortSpotResults_DeterministicOnPriceTies (#217).
+describe("sortSpotResults", () => {
+  const r = (instanceType: string, region: string, availabilityZone: string, spotPrice: number) =>
+    ({ instanceType, region, availabilityZone, spotPrice }) as import("../core/finder.js").SpotPriceResult;
+  const shuffle = <T,>(xs: T[], seed: number) => {
+    const out = [...xs];
+    for (let i = out.length - 1; i > 0; i--) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      const j = seed % (i + 1);
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  };
+  it("orders price ties the same way every run", () => {
+    const want = [
+      r("m8a.large", "us-west-2", "us-west-2a", 0.05),
+      r("m8a.large", "us-west-2", "us-west-2b", 0.05),
+      r("m8a.large", "us-west-2", "us-west-2c", 0.05),
+      r("m8a.large", "us-west-2", "us-west-2d", 0.06),
+    ];
+    for (let i = 0; i < 50; i++) expect(sortSpotResults(shuffle(want, 217 + i), true)).toEqual(want);
+    const byKey = [
+      r("c8a.large", "us-west-2", "us-west-2b", 0.09),
+      r("m8a.large", "us-east-1", "us-east-1a", 0.01),
+      r("m8a.large", "us-west-2", "us-west-2a", 0.05),
+      r("m8a.large", "us-west-2", "us-west-2c", 0.02),
+    ];
+    for (let i = 0; i < 50; i++) expect(sortSpotResults(shuffle(byKey, 217 + i), false)).toEqual(byKey);
   });
 });

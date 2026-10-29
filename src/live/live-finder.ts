@@ -41,6 +41,49 @@ import {
 import type { PriceQuote } from "../core/price.js";
 import { fetchSpotPrices } from "./spot.js";
 import { canLaunch, fetchQuotas, fetchUsage, QUOTA_FAMILIES } from "./quotas.js";
+import {
+  fetchAvailabilityZones,
+  fetchZoneInfos,
+  extractRegionsFromAZs,
+  extendedZoneNames,
+  filterByAZs,
+  filterByMinAZCount,
+  filterToLocalZones,
+  sortAZResults,
+  type ZoneInfo,
+} from "./az.js";
+import { sortZoneNames } from "../core/derive.js";
+import {
+  fanOutRegions,
+  fetchCapacityReservations,
+  fetchCapacityBlocks,
+  fetchCapacityBlockOfferings,
+  sortCapacityReservations,
+  sortCapacityBlocks,
+  sortOfferings,
+  roundCapacityBlockDuration,
+  offeringWindow,
+  isCapacityBlockIneligible,
+  CAPACITY_BLOCK_INELIGIBLE,
+  type RegionalResult,
+  type CapacityReservationOptions,
+  type CapacityReservationResult,
+  type CapacityBlockOptions,
+  type CapacityBlockResult,
+  type CapacityBlockOfferingOptions,
+  type CapacityBlockOfferingResult,
+} from "./capacity.js";
+import { obtainability, type Obtainability } from "./obtainability.js";
+
+/** Options for AwsLiveFinder.searchAZs (Go `truffle az` flags). */
+export interface AZSearchOptions {
+  /** Keep only these AZs (rows are rewritten to the matched AZs); also picks the regions. */
+  azs?: string[];
+  /** Keep rows offered in at least this many AZs per region. */
+  minAZCount?: number;
+  /** Keep only Local / Wavelength zones (#164). */
+  localZonesOnly?: boolean;
+}
 
 export interface LiveFinderOptions {
   /**
@@ -62,6 +105,12 @@ export interface LiveFinderOptions {
   pricing?: "off" | "lazy";
   /** Pricing API endpoint region (it's only served from these two). Default us-east-1. */
   pricingRegion?: PricingRegion;
+  /**
+   * Also fill `availableAZs` on search results (one batched
+   * DescribeInstanceTypeOfferings per region, as Go's IncludeAZs). Off by
+   * default: it is one more call per region.
+   */
+  includeAZs?: boolean;
   /** Test seams: inject pre-built clients so tests never construct real transport. */
   ec2ClientFor?: (region: string) => EC2Client;
   pricingClient?: PricingClient;
@@ -133,6 +182,7 @@ export class AwsLiveFinder implements LiveFinder {
     }
 
     if (this.pricingMode === "lazy") await this.fillPrices(results);
+    if (this.opts.includeAZs) await this.fillAZs(results);
     return results;
   }
 
@@ -286,8 +336,9 @@ export class AwsLiveFinder implements LiveFinder {
     if (opts.skipUsage) return info;
 
     try {
-      const { usage, runningInstances } = await fetchUsage(this.ec2For(region));
+      const { usage, spotUsage, runningInstances } = await fetchUsage(this.ec2For(region));
       info.usage = usage;
+      info.spotUsage = spotUsage;
       info.runningInstances = runningInstances;
     } catch {
       // Usage is additive detail. Without it every family reads as 0 used, which
@@ -301,6 +352,147 @@ export class AwsLiveFinder implements LiveFinder {
   /** Pure quota check against a snapshot from getQuotas. */
   canLaunch(instance: InstanceType, quotas: QuotaInfo, spot = false): QuotaVerdict {
     return canLaunch(instance, quotas, spot);
+  }
+
+  // ── #33 / #32: the rest of Go truffle's portable commands ──────────────────
+
+  /**
+   * Every instance type offered in one region (default: the first configured),
+   * sorted. Ports Go `truffle list` (GetInstanceTypes); derive families/sizes
+   * with `instanceFamilies` / `instanceSizes`.
+   */
+  async listInstanceTypes(region = this.regions[0]): Promise<string[]> {
+    const client = this.ec2For(region);
+    const names: string[] = [];
+    let token: string | undefined;
+    do {
+      const res = await client.send(new DescribeInstanceTypesCommand({ NextToken: token, MaxResults: 100 }));
+      for (const it of res.InstanceTypes ?? []) if (it.InstanceType) names.push(it.InstanceType);
+      token = res.NextToken;
+    } while (token);
+    return [...new Set(names)].sort();
+  }
+
+  /** Every zone in a region, Local/Wavelength included (Go ZoneInfos). */
+  async getZoneInfos(region = this.regions[0]): Promise<Map<string, ZoneInfo>> {
+    return fetchZoneInfos(this.ec2For(region), region);
+  }
+
+  /**
+   * The AZ-first view (Go `truffle az`): rows matching `matcher` + `filters`,
+   * each with `availableAZs`, then `azs` (which also picks the regions, as Go
+   * `--az` does), `minAZCount` and `localZonesOnly` applied, most AZs first.
+   * `localZones` names the Local/Wavelength zones seen, for labelling; a region
+   * whose zones can't be classified is left unlabelled, as Go.
+   */
+  async searchAZs(
+    matcher: RegExp,
+    filters: FilterOptions = {},
+    opts: AZSearchOptions = {},
+  ): Promise<{ results: InstanceType[]; localZones: string[]; azLookupFailures: string[] }> {
+    const regions = opts.azs?.length ? extractRegionsFromAZs(opts.azs) : this.regions;
+    const finder = regions === this.regions ? this : new AwsLiveFinder({ ...this.opts, regions, pricing: "off" });
+    let results = await finder.search(matcher, filters);
+    const failures = await this.fillAZs(results);
+    if (opts.azs?.length) results = filterByAZs(results, opts.azs);
+    if (opts.minAZCount && opts.minAZCount > 0) results = filterByMinAZCount(results, opts.minAZCount);
+
+    const local = new Set<string>();
+    for (const region of new Set(results.filter((r) => r.availableAZs?.length).map((r) => r.region!))) {
+      try {
+        for (const name of extendedZoneNames((await this.getZoneInfos(region)).values())) local.add(name);
+      } catch {
+        // Degrade as Go: this region's AZs stay unlabelled.
+      }
+    }
+    if (opts.localZonesOnly) results = filterToLocalZones(results, local);
+    return { results: sortAZResults(results), localZones: sortZoneNames([...local]), azLookupFailures: failures };
+  }
+
+  /** Fill `availableAZs` on live rows, batched per region. Returns the types whose lookup failed. */
+  private async fillAZs(results: InstanceType[]): Promise<string[]> {
+    const byRegion = new Map<string, InstanceType[]>();
+    for (const r of results) byRegion.set(r.region!, [...(byRegion.get(r.region!) ?? []), r]);
+    const failed: string[] = [];
+    await Promise.all(
+      [...byRegion].map(async ([region, rows]) => {
+        const { azs, failedTypes } = await fetchAvailabilityZones(
+          this.ec2For(region),
+          [...new Set(rows.map((r) => r.instanceType))],
+        );
+        for (const r of rows) {
+          const list = azs.get(r.instanceType);
+          if (list) r.availableAZs = list;
+        }
+        failed.push(...failedTypes.map((t) => `${t}@${region}`));
+      }),
+    );
+    return failed.sort();
+  }
+
+  /**
+   * On-Demand Capacity Reservations across the configured regions, sorted
+   * most-available first (Go `truffle capacity`). Throws only if every region
+   * fails; partial failures are in `regionErrors`.
+   */
+  async getCapacityReservations(opts: CapacityReservationOptions = {}): Promise<RegionalResult<CapacityReservationResult>> {
+    const r = await fanOutRegions(this.regions, (region) => fetchCapacityReservations(this.ec2For(region), region, opts), "capacity reservation");
+    return { ...r, results: sortCapacityReservations(r.results) };
+  }
+
+  /** Capacity Blocks for ML you already own, soonest first (Go `truffle capacity --blocks`). */
+  async getCapacityBlocks(opts: CapacityBlockOptions = {}): Promise<RegionalResult<CapacityBlockResult>> {
+    const r = await fanOutRegions(this.regions, (region) => fetchCapacityBlocks(this.ec2For(region), region, opts), "capacity block");
+    return { ...r, results: sortCapacityBlocks(r.results) };
+  }
+
+  /**
+   * Purchasable Capacity Block offerings (Go `truffle capacity-blocks`), sorted
+   * by `sort` (default price). The duration is rounded UP to a valid one first
+   * (`durationRoundedFrom` says when), and the window defaults as Go's does.
+   * When every region answers "not a Capacity Block type", the error says so
+   * rather than "all queries failed" (#110).
+   */
+  async getCapacityBlockOfferings(
+    opts: CapacityBlockOfferingOptions & { sort?: "price" | "start"; startDate?: string; now?: Date },
+  ): Promise<RegionalResult<CapacityBlockOfferingResult> & { durationHours: number; durationRoundedFrom?: number }> {
+    if (!opts.instanceType) throw new Error("instanceType is required (e.g. p5.48xlarge)");
+    const durationHours = roundCapacityBlockDuration(opts.durationHours);
+    const window = offeringWindow(durationHours, opts);
+    const query = { ...opts, durationHours, ...window };
+    const r = await fanOutRegions(
+      this.regions,
+      (region) => fetchCapacityBlockOfferings(this.ec2For(region), region, query),
+      "capacity block offering",
+      (e) => (isCapacityBlockIneligible(e) ? CAPACITY_BLOCK_INELIGIBLE : undefined),
+    );
+    const out: RegionalResult<CapacityBlockOfferingResult> & { durationHours: number; durationRoundedFrom?: number } = {
+      ...r,
+      results: sortOfferings(r.results, opts.sort ?? "price"),
+      durationHours,
+    };
+    if (durationHours !== opts.durationHours) out.durationRoundedFrom = opts.durationHours;
+    return out;
+  }
+
+  /**
+   * How obtainable `instanceType` is in `region` right now (Go `truffle
+   * available`): spot placement scores, offered AZs, quota headroom, vCPUs,
+   * Capacity Block offerings and the on-demand price — each best-effort, with
+   * any gap in `warnings`. See obtainability.ts.
+   */
+  async getObtainability(instanceType: string, region = this.regions[0]): Promise<Obtainability> {
+    return obtainability(
+      {
+        ec2: this.ec2For(region),
+        serviceQuotas:
+          this.opts.serviceQuotasClientFor?.(region) ??
+          new ServiceQuotasClient({ region, credentials: this.opts.credentials }),
+        pricing: this.pricingClient(),
+      },
+      instanceType,
+      region,
+    );
   }
 }
 

@@ -22,7 +22,10 @@ import {
   shortenReservationID,
   hasDistinctTimestamps,
   countUniqueRegions,
+  instanceFamilies,
+  instanceSizes,
 } from "./derive.js";
+import { listInstanceTypes } from "./find.js";
 import { matchesFilters } from "./filter.js";
 import { find } from "./find.js";
 import type { InstanceType } from "./types.js";
@@ -317,5 +320,19 @@ describe("text policies (Go TestTruncateWithEllipsis)", () => {
     expect(hasDistinctTimestamps([{ timestamp: "a" }, { timestamp: "b" }])).toBe(true);
     expect(hasDistinctTimestamps([{ timestamp: "a" }])).toBe(false);
     expect(countUniqueRegions([{ region: "a" }, { region: "b" }, { region: "a" }])).toBe(2);
+  });
+});
+
+describe("truffle list (Go cmd/list.go, #33)", () => {
+  it("extracts sorted families and sizes", () => {
+    const types = ["m5.large", "c5.xlarge", "m5.2xlarge", "mac2.metal", "u-6tb1.112xlarge"];
+    expect(instanceFamilies(types)).toEqual(["c5", "m5", "mac2", "u-6tb1"]);
+    expect(instanceSizes(types)).toEqual(["112xlarge", "2xlarge", "large", "metal", "xlarge"]);
+  });
+  it("listInstanceTypes lists the bundled catalog offline, sorted and unique", async () => {
+    const names = await listInstanceTypes();
+    expect(names.length).toBeGreaterThan(200);
+    expect(names).toEqual([...new Set(names)].sort());
+    expect(names).toContain("p5.48xlarge");
   });
 });

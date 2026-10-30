@@ -175,6 +175,7 @@ Breaking, and MINOR because pre-1.0 (see the 0.x policy above). Upgrading from
 
 ### Fixed
 
+- The published package now includes `NOTICE`, as Apache-2.0 §4(d) requires; earlier releases shipped only LICENSE and README (#87).
 - **`find("r8g.2xlarge")`, `find("trn1.32xlarge")`, `find("zzqx")` and
   `find("A100-80GB")` each returned all 231 bundled types.** All four parsed as
   unknown words, which constrain nothing. An exact type now matches itself. A

@@ -18,6 +18,36 @@ version strings agree.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-30
+
+Breaking, and MINOR because pre-1.0 (see the 0.x policy above). Upgrading from
+0.5.x, these change what existing calls return:
+
+- **Changed (breaking), from #82:**
+  - `onDemandPrice()` no longer estimates: an unknown type returns `undefined`
+    instead of a family guess, so it misses more often. It takes an optional
+    `region` (default us-east-1).
+  - `estimatePriceByFamily()` is removed, with no replacement.
+  - `EC2Pricing` (deprecated) is now the libs us-east-1 table: more CPU types,
+    fewer GPU types than the old hand table.
+  - The live finder returns one row per (type, region), not one per type, and
+    `sortResults` breaks ties on region. Callers that relied on one row per type
+    must dedupe themselves.
+  - The app catalog is generated from libs, so `jupyter`, `vscode`, `desktop`,
+    `openrefine` and their aliases now parse as app words.
+- **Changed (breaking), from #84:**
+  - `find` ranks size queries closest fit first, not newest generation first.
+    `sortResults` takes the query's filters as an optional third argument.
+  - A bare size in a GPU query (`a100 80gb`) is per-GPU memory, not host RAM.
+  - Per-GPU memory is compared as the GPU is sold, and the match reason text
+    changed (`GPU memory: 24 GB >= 24`).
+  - An exact type or bare family (`r8g.2xlarge`, `g5`) matches that type or
+    family instead of all 231 bundled types.
+  - A query made only of unknown words throws `UnrecognizedQueryError` instead of
+    returning every type.
+  - Spot quota checks count Spot usage only: `canLaunch(..., spot = true)` can
+    now refuse a launch that 0.5.x said would fit.
+
 ### Added
 
 - **Price provenance on every price** (#29, truffle#184). The new
@@ -52,7 +82,6 @@ version strings agree.
   the static table.
 - App catalog fields `kind`, `minVramGiB`, `aliases` and `license`, plus
   `listApps()` (sorted, as Go `catalog.List`) and `APP_CATALOG_SOURCE` (#30).
-
 - **Go truffle's `available`, `az`, `capacity`, `capacity-blocks` and `list`
   commands, on the live finder** (#32, #33). `AwsLiveFinder` gains
   `getObtainability`, `searchAZs`, `getZoneInfos`, `getCapacityReservations`,
@@ -102,20 +131,16 @@ version strings agree.
   from. Go appends every region's rows and dedupes on `{instanceType, region}`.
   `sortResults` now breaks ties on region after instance type, as Go does.
   Callers that relied on one row per type should dedupe themselves.
-
-
 - **vitest 5** (from 4.1): `vitest` and `@vitest/coverage-v8` moved together
   to ^5.0.5. Dependabot had proposed them as separate PRs (#71, #72), and each failed
   `npm ci`, because the coverage plugin must match vitest's exact version. A
   Dependabot `vitest` group now keeps `vitest` and `@vitest/*` in one PR,
   majors included.
-
 - Dependabot no longer proposes **TypeScript major** upgrades. The 7.0.2 bump
   (#54) failed `typecheck`, `test` and `build`, so it sat open and red rather than
   landing — TypeScript 7 needs a deliberate migration, not a version bump. The
   toolchain is capped at 5.x until that happens, so CI stops being red on an
   upgrade nobody scheduled.
-
 - **`find` ranks size queries closest fit first** (Go #187). `16 cores 64gb` used
   to open with the newest generation. It now leads with the type nearest the
   request, ties going cheapest first. Rows of a type stay together, cheapest
@@ -149,6 +174,7 @@ version strings agree.
   replacement, by design: a price we don't have is reported as absent.
 
 ### Fixed
+
 - **`find("r8g.2xlarge")`, `find("trn1.32xlarge")`, `find("zzqx")` and
   `find("A100-80GB")` each returned all 231 bundled types.** All four parsed as
   unknown words, which constrain nothing. An exact type now matches itself. A
@@ -189,6 +215,7 @@ version strings agree.
   true, so nothing needed relabelling; the gate is what changed.
 
 ### Security
+
 - **Every GitHub Actions ref is now pinned to a commit SHA, with Dependabot to
   bump the pins** ([#46](https://github.com/spore-host/truffle-ts/issues/46)). All 10 `uses:` refs were floating tags
   (`@v4`, `@v5`, `@v3`), and a tag is mutable — `@v4` means "whatever `v4` points at when the
@@ -253,6 +280,7 @@ central fix is that **a price is either real or absent — never guessed**. Rend
     SDK-free (the isolation test covers the new modules).
 
 ### Fixed
+
 - **A price is now either real or absent — never fabricated** (#39, #42). Three
   bad prices shipped in the bundled catalog, and each was wrong in a way that a
   footnote could not repair, because they were wrong *in the ranking*.
@@ -444,7 +472,8 @@ Initial release — the offline find foundation.
   Vite demo build (→ `site/`), `package.json` `exports` map (`.` + `./metadata`),
   TypeDoc, and CI (typecheck + test + build) (issue #1).
 
-[Unreleased]: https://github.com/spore-host/truffle-ts/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/spore-host/truffle-ts/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/spore-host/truffle-ts/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/spore-host/truffle-ts/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/spore-host/truffle-ts/compare/v0.4.0...v0.4.2
 [0.4.0]: https://github.com/spore-host/truffle-ts/compare/v0.3.0...v0.4.0

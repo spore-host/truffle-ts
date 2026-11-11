@@ -18,6 +18,10 @@ version strings agree.
 
 ## [Unreleased]
 
+### Added
+
+- `SECURITY.md`: report vulnerabilities privately through GitHub's private vulnerability reporting (the repository's Security tab), not public issues.
+
 ## [0.6.0] — 2026-10-30
 
 Breaking, and MINOR because pre-1.0 (see the 0.x policy above). Upgrading from
